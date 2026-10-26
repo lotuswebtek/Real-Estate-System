@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { createRequire } from "node:module";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import type { GridRow } from "@/lib/import/table";
 
 const require = createRequire(import.meta.url);
@@ -10,7 +10,7 @@ type ZipEntry = Readable & {
   autodrain: () => Readable & { promise?: () => Promise<void> };
 };
 
-type ZipParser = (options: { forceStream: boolean }) => Readable & AsyncIterable<ZipEntry>;
+type ZipStream = Readable & AsyncIterable<ZipEntry> & { destroy: () => void };
 
 type WorkbookMeta = {
   names: Map<string, string>;
@@ -130,9 +130,9 @@ function drainRows(buffer: string): { rows: string[]; rest: string } {
 }
 
 function openZip(filePath: string): { entries: AsyncIterable<ZipEntry>; close: () => void } {
-  const { Parse } = require("unzipper") as { Parse: ZipParser };
+  const { Parse } = require("unzipper") as { Parse: (options: { forceStream: boolean }) => ZipStream };
   const input = createReadStream(filePath);
-  const zip = input.pipe(Parse({ forceStream: true }));
+  const zip = input.pipe(Parse({ forceStream: true }) as unknown as Writable) as unknown as ZipStream;
   return {
     entries: zip,
     close: () => {
