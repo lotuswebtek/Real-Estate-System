@@ -1,0 +1,10 @@
+node_modules
+.next
+storage
+.git
+.env
+.env.*
+!.env.example
+*.log
+coverage
+leadfinder.dump

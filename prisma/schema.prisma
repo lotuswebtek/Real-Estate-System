@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  viewer
+
+  @@map("user_role")
+}
+
+enum SourceType {
+  drive
+  local
+  upload
+
+  @@map("source_type")
+}
+
+enum SourceStatus {
+  active
+  paused
+  error
+
+  @@map("source_status")
+}
+
+enum FileStatus {
+  queued
+  processing
+  done
+  failed
+  duplicate
+  removed
+  waiting
+
+  @@map("file_status")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?   @map("password_hash")
+  role         UserRole  @default(admin)
+  name         String    @default("Admin")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  sessions     Session[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  detail    String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Source {
+  id            String       @id @default(cuid())
+  type          SourceType
+  name          String
+  driveFolderId String?      @map("drive_folder_id")
+  localPath     String?      @map("local_path")
+  status        SourceStatus @default(active)
+  lastSyncedAt  DateTime?    @map("last_synced_at")
+  errorMessage  String?      @map("error_message") @db.Text
+  isSystem      Boolean      @default(false) @map("is_system")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  files         File[]
+  syncRuns      SyncRun[]
+
+  @@index([type])
+  @@map("sources")
+}
+
+model File {
+  id                String     @id @default(cuid())
+  sourceId          String     @map("source_id")
+  source            Source     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  originalName      String     @map("original_name")
+  driveFileId       String?    @map("drive_file_id")
+  drivePath         String?    @map("drive_path")
+  folderPath        String?    @map("folder_path")
+  absolutePath      String?    @map("absolute_path")
+  driveModifiedTime DateTime?  @map("drive_modified_time")
+  driveMd5          String?    @map("drive_md5")
+  driveVersion      String?    @map("drive_version")
+  sizeBytes         BigInt?    @map("size_bytes")
+  sha256Hash        String?    @map("sha256_hash")
+  localMtimeMs      BigInt?    @map("local_mtime_ms")
+  area              String?
+  duplicateOfFileId String?    @map("duplicate_of_file_id")
+  duplicateOf       File?      @relation("FileDuplicate", fields: [duplicateOfFileId], references: [id], onDelete: SetNull)
+  duplicates        File[]     @relation("FileDuplicate")
+  status            FileStatus @default(queued)
+  errorMessage      String?    @map("error_message") @db.Text
+  sheetCount        Int        @default(0) @map("sheet_count")
+  rowCount          Int        @default(0) @map("row_count")
+  storagePath       String?    @map("storage_path")
+  importedAt        DateTime?  @map("imported_at")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  sheets            Sheet[]
+  rows              Row[]
+
+  @@index([sourceId])
+  @@index([status])
+  @@index([sha256Hash])
+  @@index([driveFileId])
+  @@index([area])
+  @@index([folderPath])
+  @@map("files")
+}
+
+model Sheet {
+  id              String @id @default(cuid())
+  fileId          String @map("file_id")
+  file            File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  name            String
+  headerRowNumber Int    @map("header_row_number")
+  rowCount        Int    @default(0) @map("row_count")
+  rows            Row[]
+
+  @@index([fileId])
+  @@map("sheets")
+}
+
+model Column {
+  id            String        @id @default(cuid())
+  displayName   String        @map("display_name")
+  normalizedKey String        @unique @map("normalized_key")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  aliases       ColumnAlias[]
+
+  @@map("columns")
+}
+
+model ColumnAlias {
+  id         String @id @default(cuid())
+  columnId   String @map("column_id")
+  column     Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  rawHeader  String @map("raw_header")
+  normalized String @unique
+
+  @@index([columnId])
+  @@map("column_aliases")
+}
+
+model Row {
+  id         String   @id @default(cuid())
+  fileId     String   @map("file_id")
+  file       File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  sheetId    String   @map("sheet_id")
+  sheet      Sheet    @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  rowNumber  Int      @map("row_number")
+  data       Json
+  searchText String   @map("search_text") @db.Text
+  phoneKeys  String[] @default([]) @map("phone_keys")
+  emailKeys  String[] @default([]) @map("email_keys")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([fileId])
+  @@index([sheetId])
+  @@map("rows")
+}
+
+model SyncRun {
+  id           String    @id @default(cuid())
+  sourceId     String?   @map("source_id")
+  source       Source?   @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  startedAt    DateTime  @default(now()) @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+  status       String
+  filesChecked Int       @default(0) @map("files_checked")
+  filesNew     Int       @default(0) @map("files_new")
+  filesUpdated Int       @default(0) @map("files_updated")
+  filesSkipped Int       @default(0) @map("files_skipped")
+  filesFailed  Int       @default(0) @map("files_failed")
+  errorMessage String?   @map("error_message") @db.Text
+  details      Json?
+
+  @@index([sourceId])
+  @@index([startedAt])
+  @@map("sync_runs")
+}
+
+model GoogleCredential {
+  id                    String   @id @default("default")
+  refreshTokenEncrypted String   @map("refresh_token_encrypted") @db.Text
+  accountEmail          String?  @map("account_email")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("google_credentials")
+}
+
+model Job {
+  id           String    @id @default(cuid())
+  type         String
+  payload      Json
+  status       String    @default("pending")
+  attempts     Int       @default(0)
+  runAfter     DateTime  @default(now()) @map("run_after")
+  lockedAt     DateTime? @map("locked_at")
+  errorMessage String?   @map("error_message") @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, runAfter])
+  @@map("jobs")
+}
