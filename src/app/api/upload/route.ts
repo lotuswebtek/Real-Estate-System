@@ -39,9 +39,9 @@ export async function POST(request: Request) {
         status: "queued",
       },
     });
-    const directory = path.resolve(process.env.STORAGE_PATH || "./storage", record.id);
+    const directory = path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_PATH || "./storage", record.id);
     await mkdir(directory, { recursive: true });
-    const storagePath = path.join(directory, name);
+    const storagePath = path.join(/*turbopackIgnore: true*/ directory, name);
     const bytes = Buffer.from(await file.arrayBuffer());
     await writeFile(storagePath, bytes);
     await prisma.file.update({ where: { id: record.id }, data: { absolutePath: storagePath, storagePath } });

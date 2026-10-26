@@ -28,7 +28,7 @@ function hashFile(filePath: string): Promise<string> {
 }
 
 function storageRoot(): string {
-  return path.resolve(process.env.STORAGE_PATH || "./storage");
+  return path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_PATH || "./storage");
 }
 
 function maxBytes(): number {
@@ -189,10 +189,10 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma):
 
     let storagePath = sourcePath;
     if (!file.absolutePath) {
-      const destinationDir = path.join(storageRoot(), fileId);
+      const destinationDir = path.join(/*turbopackIgnore: true*/ storageRoot(), fileId);
       await mkdir(destinationDir, { recursive: true });
-      storagePath = path.join(destinationDir, file.originalName);
-      if (path.resolve(sourcePath) !== path.resolve(storagePath)) {
+      storagePath = path.join(/*turbopackIgnore: true*/ destinationDir, file.originalName);
+      if (path.resolve(/*turbopackIgnore: true*/ sourcePath) !== path.resolve(/*turbopackIgnore: true*/ storagePath)) {
         await copyFile(sourcePath, storagePath);
       }
     }
