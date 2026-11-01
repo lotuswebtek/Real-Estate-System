@@ -23,6 +23,7 @@ const MODES: { id: MatchMode; label: string }[] = [
   { id: "contains", label: "Contains" },
   { id: "exact", label: "Exact value" },
   { id: "starts", label: "Starts with" },
+  { id: "ends", label: "Ends with" },
 ];
 
 const COLUMNS: SearchColumn[] = ["all", "name", "mobile", "email", "nationality", "project", "unit", "area"];

@@ -1,4 +1,4 @@
-export type SearchMode = "contains" | "exact" | "starts";
+export type SearchMode = "contains" | "exact" | "starts" | "ends";
 
 export type SearchColumn =
   | "all"

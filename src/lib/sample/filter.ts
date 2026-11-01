@@ -1,7 +1,7 @@
 import { digitsOnly, formatPhone, isPhoneQuery, normalizePhoneKeys, phoneKeyFromDigits, splitPhoneValues } from "@/lib/phone";
 import { SAMPLE_LEADS, type SampleLead } from "./leads";
 
-export type MatchMode = "contains" | "exact" | "starts";
+export type MatchMode = "contains" | "exact" | "starts" | "ends";
 
 export type SearchColumn =
   | "all"
@@ -113,6 +113,7 @@ function textMatches(values: string[], query: string, mode: MatchMode): boolean 
   const haystacks = values.map((value) => value.toLowerCase());
   if (mode === "exact") return haystacks.some((value) => value === needle);
   if (mode === "starts") return haystacks.some((value) => value.startsWith(needle));
+  if (mode === "ends") return haystacks.some((value) => value.endsWith(needle));
   const words = needle.split(/\s+/).filter(Boolean);
   return words.every((word) => haystacks.some((value) => value.includes(word)));
 }
@@ -123,6 +124,7 @@ function phoneMatches(lead: SampleLead, query: string, mode: MatchMode): boolean
   const keys = normalizePhoneKeys(lead.mobileRaw);
   if (mode === "exact") return keys.includes(queryKey);
   if (mode === "starts") return keys.some((key) => key.startsWith(queryKey)) || textMatches(mobileFieldValues(lead), query, "starts");
+  if (mode === "ends") return keys.some((key) => key.endsWith(queryKey)) || textMatches(mobileFieldValues(lead), query, "ends");
   return keys.includes(queryKey);
 }
 

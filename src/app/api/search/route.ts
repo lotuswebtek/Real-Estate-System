@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { search } from "@/lib/search";
 import type { SearchColumn, SearchMode } from "@/lib/search";
 
-const MODES = new Set<SearchMode>(["contains", "exact", "starts"]);
+const MODES = new Set<SearchMode>(["contains", "exact", "starts", "ends"]);
 const COLUMNS = new Set<SearchColumn>(["all", "name", "mobile", "email", "nationality", "project", "unit", "area"]);
 
 function list(url: URL, key: string): string[] {

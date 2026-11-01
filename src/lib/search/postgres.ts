@@ -11,6 +11,31 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
+function compactAlnum(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function isPlotLike(value: string): boolean {
+  const compact = compactAlnum(value);
+  return compact.length >= 3 && /[a-z]/.test(compact) && /\d/.test(compact);
+}
+
+function targetExpr(column: SearchColumn): Prisma.Sql {
+  return column === "all" ? Prisma.sql`r.search_text` : columnExpr(column);
+}
+
+function likeClause(column: SearchColumn, pattern: string, raw: string, mode: "contains" | "starts" | "ends"): Prisma.Sql {
+  const target = targetExpr(column);
+  const text = Prisma.sql`immutable_unaccent(${target}) ILIKE immutable_unaccent(${pattern}) ESCAPE '\\'`;
+  const compact = compactAlnum(raw);
+  if (!isPlotLike(raw)) return text;
+  const compactPattern = mode === "starts" ? `${compact}%` : mode === "ends" ? `%${compact}` : `%${compact}%`;
+  return Prisma.sql`(
+    ${text}
+    OR regexp_replace(lower(immutable_unaccent(${target})), '[^[:alnum:]]+', '', 'g') LIKE ${compactPattern}
+  )`;
+}
+
 function columnExpr(column: Exclude<SearchColumn, "all">): Prisma.Sql {
   switch (column) {
     case "name":
@@ -43,12 +68,12 @@ function textFilter(query: string, mode: SearchMode, column: SearchColumn): Pris
     }
     return Prisma.sql`immutable_unaccent(${columnExpr(column)}) = immutable_unaccent(${trimmed})`;
   }
-  const words = mode === "starts" ? [trimmed] : trimmed.split(/\s+/).filter((word) => word.length > 0);
-  const parts = words.map((word) => {
-    const pattern = mode === "starts" ? `${escapeLike(word)}%` : `%${escapeLike(word)}%`;
-    const target = column === "all" ? Prisma.sql`r.search_text` : columnExpr(column);
-    return Prisma.sql`immutable_unaccent(${target}) ILIKE immutable_unaccent(${pattern}) ESCAPE '\\'`;
-  });
+  if (mode === "starts" || mode === "ends") {
+    const pattern = mode === "starts" ? `${escapeLike(trimmed)}%` : `%${escapeLike(trimmed)}`;
+    return likeClause(column, pattern, trimmed, mode);
+  }
+  const words = trimmed.split(/\s+/).filter((word) => word.length > 0);
+  const parts = words.map((word) => likeClause(column, `%${escapeLike(word)}%`, word, "contains"));
   return Prisma.sql`(${Prisma.join(parts, " AND ")})`;
 }
 

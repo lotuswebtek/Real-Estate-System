@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import type { SearchHit, SearchResponse } from "@/lib/search/types";
 import type { MatchMode } from "@/lib/sample/filter";
 
-const MODES = ["contains", "exact", "starts"] as const;
+const MODES = ["contains", "exact", "starts", "ends"] as const;
 const COLUMNS = ["all", "name", "mobile", "email", "nationality", "project", "unit", "area"] as const;
 const DATES = ["all", "7", "30"] as const;
 const DIRS = ["asc", "desc"] as const;
