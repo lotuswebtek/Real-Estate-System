@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { readSession, SESSION_COOKIE } from "@/lib/auth/token";
 
 function isPublic(pathname: string) {
-  return pathname === "/login" || pathname === "/api/auth/login";
+  return pathname === "/login" || pathname === "/api/auth/login" || pathname === "/robots.txt";
 }
 
 export async function proxy(request: NextRequest) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { parseAsArrayOf, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
+import { parseAsArrayOf, parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
+import { toast } from "sonner";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { DetailPanel } from "@/components/search/detail-panel";
 import { FilterBar } from "@/components/search/filter-bar";
@@ -10,11 +11,13 @@ import { ResultsPanel } from "@/components/search/results-panel";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import type { SearchHit, SearchResponse } from "@/lib/search/types";
+import { readClauses } from "@/lib/search/clauses";
+import { readSavedSearches, subscribeLibrary, writeSavedSearches, type SavedSearch } from "@/lib/client/library";
+import type { SearchClause, SearchHit, SearchResponse } from "@/lib/search/types";
+import { SEARCH_COLUMNS } from "@/lib/search/types";
 import type { MatchMode } from "@/lib/sample/filter";
 
 const MODES = ["contains", "exact", "starts", "ends"] as const;
-const COLUMNS = ["all", "name", "mobile", "email", "nationality", "project", "unit", "area"] as const;
 const DATES = ["all", "7", "30"] as const;
 const DIRS = ["asc", "desc"] as const;
 
@@ -71,8 +74,8 @@ function csvCell(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
-function downloadCsv(rows: SearchHit[]) {
-  const header = ["Name", "Mobile", "Email", "Nationality", "Area", "Project", "Unit", "Property type", "Folder", "File", "Sheet", "Row", "Size", "Price"];
+function downloadCsv(rows: SearchHit[], context: string) {
+  const header = ["Name", "Mobile", "Email", "Nationality", "Area", "Project", "Unit", "Property type", "Folder", "File", "Sheet", "Row", "Size", "Price", "Search context"];
   const lines = rows.map((lead) =>
     [
       lead.name,
@@ -89,6 +92,7 @@ function downloadCsv(rows: SearchHit[]) {
       String(lead.rowNumber),
       lead.size,
       lead.price,
+      context,
     ]
       .map(csvCell)
       .join(","),
@@ -111,7 +115,7 @@ export function SearchExperience() {
     {
       q: parseAsString.withDefault(""),
       mode: parseAsStringLiteral(MODES).withDefault("contains"),
-      col: parseAsStringLiteral(COLUMNS).withDefault("all"),
+      col: parseAsStringLiteral(SEARCH_COLUMNS).withDefault("all"),
       area: parseAsArrayOf(parseAsString, "|").withDefault([]),
       folder: parseAsArrayOf(parseAsString, "|").withDefault([]),
       nationality: parseAsArrayOf(parseAsString, "|").withDefault([]),
@@ -121,6 +125,8 @@ export function SearchExperience() {
       sort: parseAsString.withDefault(""),
       dir: parseAsStringLiteral(DIRS).withDefault("asc"),
       row: parseAsString.withDefault(""),
+      rules: parseAsString.withDefault(""),
+      page: parseAsInteger.withDefault(1),
     },
     { history: "replace", clearOnDefault: true },
   );
@@ -133,10 +139,27 @@ export function SearchExperience() {
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      if (draft !== state.q) void setState({ q: draft });
+      if (draft !== state.q) void setState({ q: draft, page: 1 });
     }, 150);
     return () => window.clearTimeout(handle);
   }, [draft, setState, state.q]);
+
+  const [ruleDraft, setRuleDraft] = useState<SearchClause[]>(() => readClauses(state.rules));
+  const [syncedRules, setSyncedRules] = useState(state.rules);
+  if (state.rules !== syncedRules) {
+    setSyncedRules(state.rules);
+    setRuleDraft(readClauses(state.rules));
+  }
+  const saved = useSyncExternalStore((listener) => subscribeLibrary("saved", listener), readSavedSearches, () => [] as SavedSearch[]);
+  const [saveName, setSaveName] = useState("");
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const next = ruleDraft.length > 0 ? JSON.stringify(ruleDraft) : "";
+      if (next !== state.rules) void setState({ rules: next, page: 1 });
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [ruleDraft, setState, state.rules]);
 
   const searchParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -153,6 +176,8 @@ export function SearchExperience() {
       params.set("sort", state.sort);
       params.set("dir", state.dir);
     }
+    if (state.rules) params.set("rules", state.rules);
+    if (state.page > 1) params.set("page", String(state.page));
     return params.toString();
   }, [state]);
 
@@ -245,7 +270,7 @@ export function SearchExperience() {
                 className="absolute top-1/2 right-12 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-muted"
                 onClick={() => {
                   setDraft("");
-                  void setState({ q: "" });
+                  void setState({ q: "", page: 1 });
                 }}
               >
                 <X className="size-4" />
@@ -253,23 +278,65 @@ export function SearchExperience() {
             ) : (
               <Kbd className="absolute top-1/2 right-3 hidden -translate-y-1/2 sm:inline-flex">/</Kbd>
             )}
-            {focused && draft.trim().length === 0 && recent.length > 0 ? (
+            {focused && draft.trim().length === 0 && (recent.length > 0 || saved.length > 0) ? (
               <div className="absolute z-20 mt-2 w-full rounded-lg border border-border bg-popover p-1">
-                <p className="px-2 py-1.5 text-[12px] text-muted-foreground">Recent searches</p>
+                {saved.length > 0 ? <p className="px-2 py-1.5 text-[12px] text-muted-foreground">Saved searches</p> : null}
+                {saved.map((item) => (
+                  <div key={item.name} className="flex items-center">
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setDraft(item.query);
+                        setRuleDraft(readClauses(item.rules));
+                        void setState({ q: item.query, rules: item.rules, page: 1 });
+                        setFocused(false);
+                      }}
+                    >
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete saved search ${item.name}`}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => writeSavedSearches(readSavedSearches().filter((entry) => entry.name !== item.name))}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {recent.length > 0 ? <p className="px-2 py-1.5 text-[12px] text-muted-foreground">Recent searches</p> : null}
                 {recent.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    className="flex w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      setDraft(item);
-                      void setState({ q: item });
-                      setFocused(false);
-                    }}
-                  >
-                    {item}
-                  </button>
+                  <div key={item} className="flex items-center">
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setDraft(item);
+                        void setState({ q: item, page: 1 });
+                        setFocused(false);
+                      }}
+                    >
+                      <span className="truncate">{item}</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${item} from recent searches`}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        const next = readRecent().filter((entry) => entry !== item);
+                        recentCache = next;
+                        window.localStorage.setItem("lf.recent", JSON.stringify(next));
+                        for (const listener of recentListeners) listener();
+                      }}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : null}
@@ -287,13 +354,105 @@ export function SearchExperience() {
             ) : (
               <>
                 <span className="font-medium text-foreground tabular-nums">
-                  {searchQuery.data?.capped ? `${sorted.length.toLocaleString()}+` : (searchQuery.data?.total ?? 0).toLocaleString()}
+                  {searchQuery.data?.capped
+                    ? `${Math.max(searchQuery.data.total, sorted.length).toLocaleString()}+`
+                    : (searchQuery.data?.total ?? 0).toLocaleString()}
                 </span>{" "}
                 results in <span className="font-mono tabular-nums">{searchQuery.data?.tookMs ?? 0}</span> ms
-                {searchQuery.data?.capped ? <span> · showing the first {sorted.length.toLocaleString()}</span> : null}
+                {sorted.length > 0 ? (
+                  <span>
+                    {" "}
+                    · rows {((state.page - 1) * (searchQuery.data?.pageSize ?? sorted.length) + 1).toLocaleString()}–
+                    {((state.page - 1) * (searchQuery.data?.pageSize ?? sorted.length) + sorted.length).toLocaleString()}
+                  </span>
+                ) : null}
+                {sorted.length > 0 ? (
+                  <span className="ml-2 inline-flex gap-1">
+                    <Button type="button" variant="ghost" size="sm" disabled={state.page <= 1} onClick={() => void setState({ page: state.page - 1 })}>
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={
+                        searchQuery.data?.capped
+                          ? sorted.length < (searchQuery.data?.pageSize ?? sorted.length)
+                          : state.page * (searchQuery.data?.pageSize ?? sorted.length) >= (searchQuery.data?.total ?? 0)
+                      }
+                      onClick={() => void setState({ page: state.page + 1 })}
+                    >
+                      Next
+                    </Button>
+                  </span>
+                ) : null}
+                {sorted.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-2"
+                    onClick={() => {
+                      void (async () => {
+                        const response = await fetch(`/api/export?${searchParams}`);
+                        if (!response.ok) {
+                          toast("Export did not finish.");
+                          return;
+                        }
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = "lead-finder-matches.csv";
+                        link.click();
+                        URL.revokeObjectURL(url);
+                      })();
+                    }}
+                  >
+                    Export matches
+                  </Button>
+                ) : null}
+                {state.q.trim() && sorted.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-2"
+                    onClick={() => {
+                      const next = [...ruleDraft.filter((rule) => rule.query.trim()), { column: state.col, mode: state.mode, query: state.q.trim(), join: "and" as const, exclude: false }].slice(0, 6);
+                      setDraft("");
+                      setRuleDraft(next);
+                      void setState({ q: "", rules: JSON.stringify(next), page: 1 });
+                    }}
+                  >
+                    Search within these results
+                  </Button>
+                ) : null}
               </>
             )}
           </p>
+          <form
+            className="mt-2 flex flex-wrap items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = saveName.trim();
+              if (!name) return;
+              const next = [{ name, query: state.q, rules: state.rules }, ...readSavedSearches().filter((item) => item.name !== name)].slice(0, 20);
+              writeSavedSearches(next);
+              setSaveName("");
+            }}
+          >
+            <input
+              value={saveName}
+              onChange={(event) => setSaveName(event.target.value)}
+              placeholder="Name this search"
+              aria-label="Name this search"
+              className="h-8 w-44 rounded-lg border border-border bg-card px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            />
+            <Button type="submit" variant="outline" size="sm" disabled={saveName.trim().length === 0}>
+              Save search
+            </Button>
+          </form>
           <FilterBar
             mobile={mobile}
             mode={state.mode as MatchMode}
@@ -309,17 +468,23 @@ export function SearchExperience() {
             nationalityOptions={nationalityOptions}
             propertyTypeOptions={propertyTypeOptions}
             fileOptions={fileOptions}
-            onMode={(mode) => void setState({ mode })}
-            onColumn={(column) => void setState({ col: column })}
+            onMode={(mode) => void setState({ mode, page: 1 })}
+            onColumn={(column) => void setState({ col: column, page: 1 })}
             onToggle={(key, value) => {
-              if (key === "areas") void setState({ area: toggleValue(state.area, value) });
-              if (key === "folders") void setState({ folder: toggleValue(state.folder, value) });
-              if (key === "nationalities") void setState({ nationality: toggleValue(state.nationality, value) });
-              if (key === "propertyTypes") void setState({ type: toggleValue(state.type, value) });
-              if (key === "files") void setState({ file: toggleValue(state.file, value) });
+              if (key === "areas") void setState({ area: toggleValue(state.area, value), page: 1 });
+              if (key === "folders") void setState({ folder: toggleValue(state.folder, value), page: 1 });
+              if (key === "nationalities") void setState({ nationality: toggleValue(state.nationality, value), page: 1 });
+              if (key === "propertyTypes") void setState({ type: toggleValue(state.type, value), page: 1 });
+              if (key === "files") void setState({ file: toggleValue(state.file, value), page: 1 });
             }}
-            onDate={(date) => void setState({ date })}
-            onClear={() => void setState({ area: [], folder: [], nationality: [], type: [], file: [], date: "all" })}
+            onDate={(date) => void setState({ date, page: 1 })}
+            onClear={() => {
+              setDraft("");
+              setRuleDraft([]);
+              void setState({ q: "", area: [], folder: [], nationality: [], type: [], file: [], date: "all", rules: "", page: 1 });
+            }}
+            rules={ruleDraft}
+            onRules={setRuleDraft}
           />
         </div>
         <div className="mt-4 min-h-0 flex-1 px-4 pb-4 md:px-8">
@@ -333,7 +498,7 @@ export function SearchExperience() {
             direction={state.dir}
             onSort={onSort}
             onSelect={(id) => void setState({ row: state.row === id ? "" : id })}
-            onExport={() => downloadCsv(sorted)}
+            onExport={() => downloadCsv(sorted, [state.q, state.mode, state.col, state.rules].filter(Boolean).join(" | "))}
           />
         </div>
       </div>

@@ -1,17 +1,11 @@
 import { digitsOnly, formatPhone, isPhoneQuery, normalizePhoneKeys, phoneKeyFromDigits, splitPhoneValues } from "@/lib/phone";
 import { SAMPLE_LEADS, type SampleLead } from "./leads";
 
-export type MatchMode = "contains" | "exact" | "starts" | "ends";
+import type { SearchColumn } from "@/lib/search/types";
 
-export type SearchColumn =
-  | "all"
-  | "name"
-  | "mobile"
-  | "email"
-  | "nationality"
-  | "project"
-  | "unit"
-  | "area";
+export type { SearchColumn } from "@/lib/search/types";
+
+export type MatchMode = "contains" | "exact" | "starts" | "ends";
 
 export type SampleFilters = {
   query: string;
@@ -45,7 +39,11 @@ const COLUMN_LABELS: Record<SearchColumn, string> = {
   nationality: "Nationality",
   project: "Project",
   unit: "Unit",
+  plot: "Plot",
   area: "Area",
+  propertyType: "Property type",
+  bedrooms: "Bedrooms",
+  role: "Role",
 };
 
 export function columnLabel(column: SearchColumn): string {
@@ -81,8 +79,16 @@ function fieldValues(lead: SampleLead, column: Exclude<SearchColumn, "all">): st
       return [lead.project];
     case "unit":
       return [lead.unit];
+    case "plot":
+      return [lead.unit];
     case "area":
       return [lead.area];
+    case "propertyType":
+      return [lead.propertyType];
+    case "bedrooms":
+      return [];
+    case "role":
+      return [];
   }
 }
 

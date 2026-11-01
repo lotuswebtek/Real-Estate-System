@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import type { MatchMode, SearchColumn } from "@/lib/sample/filter";
 import { columnLabel } from "@/lib/sample/filter";
+import { SEARCH_COLUMNS, type SearchClause, type SearchMode } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
 
 type Facet = { value: string; count: number };
@@ -26,12 +27,47 @@ const MODES: { id: MatchMode; label: string }[] = [
   { id: "ends", label: "Ends with" },
 ];
 
-const COLUMNS: SearchColumn[] = ["all", "name", "mobile", "email", "nationality", "project", "unit", "area"];
-
 function chipClass(active: boolean) {
   return cn(
     "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] transition-colors duration-150",
     active ? "border-primary/30 bg-accent text-accent-foreground" : "border-border bg-card text-foreground hover:bg-muted",
+  );
+}
+
+export function ColumnSelect({ value, onChange }: { value: SearchColumn; onChange: (column: SearchColumn) => void }) {
+  const [query, setQuery] = useState("");
+  const shown = SEARCH_COLUMNS.filter((column) => columnLabel(column).toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className={chipClass(value !== "all")}>
+          {columnLabel(value)}
+          <ChevronDown className="size-3.5 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64">
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Find a field"
+          className="mb-2 h-8 text-[13px]"
+          aria-label="Find a field"
+        />
+        <div className="max-h-64 space-y-0.5 overflow-y-auto">
+          {shown.length === 0 ? <p className="px-2 py-6 text-center text-[13px] text-muted-foreground">No field with that name.</p> : null}
+          {shown.map((column) => (
+            <button
+              key={column}
+              type="button"
+              className={cn("flex w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted", column === value && "bg-accent")}
+              onClick={() => onChange(column)}
+            >
+              {columnLabel(column)}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -142,6 +178,8 @@ export function FilterBar({
   onToggle,
   onDate,
   onClear,
+  rules,
+  onRules,
 }: {
   mobile: boolean;
   mode: MatchMode;
@@ -162,6 +200,8 @@ export function FilterBar({
   onToggle: (key: "areas" | "folders" | "nationalities" | "propertyTypes" | "files", value: string) => void;
   onDate: (date: "all" | "7" | "30") => void;
   onClear: () => void;
+  rules: SearchClause[];
+  onRules: (rules: SearchClause[]) => void;
 }) {
   const activeChips = [
     ...areas.map((value) => ({ key: "areas" as const, value })),
@@ -194,21 +234,7 @@ export function FilterBar({
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="mx-1 hidden h-5 w-px bg-border sm:block" />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" className={chipClass(column !== "all")}>
-              {columnLabel(column)}
-              <ChevronDown className="size-3.5 opacity-60" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {COLUMNS.map((item) => (
-              <DropdownMenuItem key={item} onSelect={() => onColumn(item)}>
-                {columnLabel(item)}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ColumnSelect value={column} onChange={onColumn} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className={chipClass(mode !== "contains")}>
@@ -250,6 +276,72 @@ export function FilterBar({
           </Button>
         </div>
       ) : null}
+      <div className="mt-3 space-y-2">
+        {rules.map((rule, index) => (
+          <div key={`${index}-${rule.column}`} className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={cn(chipClass(rule.join === "or"), "w-14 justify-center")}>
+                  {rule.join === "or" ? "Or" : "And"}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onSelect={() => onRules(rules.map((item, itemIndex) => (itemIndex === index ? { ...item, join: "and" } : item)))}>
+                  And
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onRules(rules.map((item, itemIndex) => (itemIndex === index ? { ...item, join: "or" } : item)))}>
+                  Or
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <ColumnSelect value={rule.column} onChange={(next) => onRules(rules.map((item, itemIndex) => (itemIndex === index ? { ...item, column: next } : item)))} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className={chipClass(rule.mode !== "contains" || rule.exclude)}>
+                  {rule.exclude ? "Not " : ""}
+                  {MODES.find((item) => item.id === rule.mode)?.label}
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {MODES.map((item) => (
+                  <DropdownMenuItem key={item.id} onSelect={() => onRules(rules.map((entry, itemIndex) => (itemIndex === index ? { ...entry, mode: item.id as SearchMode, exclude: false } : entry)))}>
+                    {item.label}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem onSelect={() => onRules(rules.map((entry, itemIndex) => (itemIndex === index ? { ...entry, exclude: !entry.exclude } : entry)))}>
+                  {rule.exclude ? "Include matches" : "Exclude matches"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Input
+              value={rule.query}
+              onChange={(event) => onRules(rules.map((item, itemIndex) => (itemIndex === index ? { ...item, query: event.target.value } : item)))}
+              placeholder="Value"
+              aria-label={`Condition ${index + 1}`}
+              className="h-8 w-44 text-[13px]"
+            />
+            <button
+              type="button"
+              aria-label={`Remove condition ${index + 1}`}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+              onClick={() => onRules(rules.filter((_, itemIndex) => itemIndex !== index))}
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+        {rules.length < 6 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onRules([...rules, { column: "name", mode: mode as SearchMode, query: "", join: "and", exclude: false }])}
+          >
+            Add condition
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
+import { useQuery } from "@tanstack/react-query";
 import { useDensity } from "@/components/providers";
 import { useThemeChoice } from "@/components/theme-choice";
 import { useSignOut } from "@/lib/auth/sign-out";
@@ -21,6 +22,14 @@ export function SettingsView() {
   const theme = useThemeChoice();
   const { density, setDensity } = useDensity();
   const signOut = useSignOut();
+  const activity = useQuery({
+    queryKey: ["audit"],
+    queryFn: async () => {
+      const response = await fetch("/api/audit");
+      if (!response.ok) throw new Error("Activity could not load.");
+      return (await response.json()) as { entries: { id: string; action: string; detail: string; createdAt: string }[] };
+    },
+  });
 
   return (
     <div className="h-full overflow-y-auto">
@@ -43,6 +52,27 @@ export function SettingsView() {
           <Button type="button" variant="outline" className="mt-4" onClick={() => void signOut()}>
             Sign out
           </Button>
+        </section>
+
+        <section className="mt-4 rounded-lg border border-border bg-card p-5">
+          <h2 className="text-[16px] font-medium">Backups</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            Leads live in the Railway Postgres volume. Take a volume backup from the Railway project before a large import or a volume resize. This page does not download the database.
+          </p>
+        </section>
+
+        <section className="mt-4 rounded-lg border border-border bg-card p-5">
+          <h2 className="text-[16px] font-medium">Activity</h2>
+          <p className="mt-1 text-[13px] text-muted-foreground">Exports are recorded here. The log stores the column, match mode, and row count.</p>
+          <ul className="mt-3 space-y-2">
+            {(activity.data?.entries ?? []).map((entry) => (
+              <li key={entry.id} className="text-[13px]">
+                <span className="capitalize">{entry.action}</span>
+                <span className="text-muted-foreground"> · {entry.detail}</span>
+              </li>
+            ))}
+            {activity.data && activity.data.entries.length === 0 ? <li className="text-[13px] text-muted-foreground">No exports yet.</li> : null}
+          </ul>
         </section>
 
         <section className="mt-4 rounded-lg border border-border bg-card p-5">

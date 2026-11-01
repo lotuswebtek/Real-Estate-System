@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { digitsOnly, isPhoneQuery, phoneKeyFromDigits } from "@/lib/phone";
-import type { SearchColumn, SearchHit, SearchMode, SearchRequest, SearchResponse } from "@/lib/search/types";
+import type { SearchClause, SearchColumn, SearchHit, SearchMode, SearchRequest, SearchResponse } from "@/lib/search/types";
 
 const PAGE_LIMIT = 200;
 
@@ -28,12 +28,18 @@ function likeClause(column: SearchColumn, pattern: string, raw: string, mode: "c
   const target = targetExpr(column);
   const text = Prisma.sql`immutable_unaccent(${target}) ILIKE immutable_unaccent(${pattern}) ESCAPE '\\'`;
   const compact = compactAlnum(raw);
-  if (!isPlotLike(raw)) return text;
-  const compactPattern = mode === "starts" ? `${compact}%` : mode === "ends" ? `%${compact}` : `%${compact}%`;
-  return Prisma.sql`(
-    ${text}
-    OR regexp_replace(lower(immutable_unaccent(${target})), '[^[:alnum:]]+', '', 'g') LIKE ${compactPattern}
-  )`;
+  if (!isPlotLike(raw) || !compact) return text;
+  const hyphenated = compact.replace(/^([a-z]+)(\d.*)$/i, "$1-$2");
+  const spaced = compact.replace(/^([a-z]+)(\d.*)$/i, "$1 $2");
+  const variants = [compact, hyphenated, spaced].filter((value, index, all) => value.length > 0 && all.indexOf(value) === index);
+  const extra = variants
+    .filter((value) => value.toLowerCase() !== raw.trim().toLowerCase())
+    .map((value) => {
+      const variantPattern = mode === "starts" ? `${escapeLike(value)}%` : mode === "ends" ? `%${escapeLike(value)}` : `%${escapeLike(value)}%`;
+      return Prisma.sql`immutable_unaccent(${target}) ILIKE immutable_unaccent(${variantPattern}) ESCAPE '\\'`;
+    });
+  if (extra.length === 0) return text;
+  return Prisma.sql`(${text} OR ${Prisma.join(extra, " OR ")})`;
 }
 
 function columnExpr(column: Exclude<SearchColumn, "all">): Prisma.Sql {
@@ -50,31 +56,84 @@ function columnExpr(column: Exclude<SearchColumn, "all">): Prisma.Sql {
       return Prisma.sql`COALESCE(r.data->>'project', '')`;
     case "unit":
       return Prisma.sql`COALESCE(r.data->>'unit', '')`;
+    case "plot":
+      return Prisma.sql`COALESCE(NULLIF(r.data->>'plot', ''), NULLIF(r.data->>'plot_no', ''), NULLIF(r.data->>'plot_number', ''), NULLIF(r.data->>'parcel', ''), NULLIF(r.data->>'unit', ''), '')`;
     case "area":
       return Prisma.sql`COALESCE(NULLIF(r.data->>'area', ''), f.area, '')`;
+    case "propertyType":
+      return Prisma.sql`COALESCE(r.data->>'property_type', '')`;
+    case "bedrooms":
+      return Prisma.sql`COALESCE(r.data->>'bedrooms', '')`;
+    case "role":
+      return Prisma.sql`COALESCE(r.data->>'role', '')`;
   }
+}
+
+function phoneFilter(trimmed: string, column: SearchColumn): Prisma.Sql | null {
+  if (column !== "all" && column !== "mobile") return null;
+  const pieces = trimmed.split(/[\s,;|/]+/).map((part) => part.trim()).filter((part) => part.length > 0);
+  if (pieces.length === 0) return null;
+  const keys: string[] = [];
+  for (const piece of pieces) {
+    if (!isPhoneQuery(piece)) return null;
+    const key = phoneKeyFromDigits(digitsOnly(piece));
+    if (!key) return null;
+    keys.push(key);
+  }
+  if (keys.length === 0) return null;
+  return Prisma.sql`r.phone_keys && ${keys}::text[]`;
 }
 
 function textFilter(query: string, mode: SearchMode, column: SearchColumn): Prisma.Sql | null {
   const trimmed = query.trim();
   if (!trimmed) return null;
-  if (isPhoneQuery(trimmed) && (column === "all" || column === "mobile")) {
-    const key = phoneKeyFromDigits(digitsOnly(trimmed));
-    if (key) return Prisma.sql`${key} = ANY(r.phone_keys)`;
-  }
+  const phones = phoneFilter(trimmed, column);
+  if (phones) return phones;
+  let direct: Prisma.Sql;
   if (mode === "exact") {
-    if (column === "all") {
-      return Prisma.sql`EXISTS (SELECT 1 FROM jsonb_each_text(r.data) field WHERE immutable_unaccent(field.value) = immutable_unaccent(${trimmed}))`;
-    }
-    return Prisma.sql`immutable_unaccent(${columnExpr(column)}) = immutable_unaccent(${trimmed})`;
-  }
-  if (mode === "starts" || mode === "ends") {
+    direct =
+      column === "all"
+        ? Prisma.sql`EXISTS (SELECT 1 FROM jsonb_each_text(r.data) field WHERE immutable_unaccent(field.value) = immutable_unaccent(${trimmed}))`
+        : Prisma.sql`immutable_unaccent(${columnExpr(column)}) = immutable_unaccent(${trimmed})`;
+  } else if (mode === "starts" || mode === "ends") {
     const pattern = mode === "starts" ? `${escapeLike(trimmed)}%` : `%${escapeLike(trimmed)}`;
-    return likeClause(column, pattern, trimmed, mode);
+    direct = likeClause(column, pattern, trimmed, mode);
+  } else {
+    const words = trimmed.split(/\s+/).filter((word) => word.length > 0);
+    direct = Prisma.sql`(${Prisma.join(
+      words.map((word) => likeClause(column, `%${escapeLike(word)}%`, word, "contains")),
+      " AND ",
+    )})`;
   }
-  const words = trimmed.split(/\s+/).filter((word) => word.length > 0);
-  const parts = words.map((word) => likeClause(column, `%${escapeLike(word)}%`, word, "contains"));
-  return Prisma.sql`(${Prisma.join(parts, " AND ")})`;
+  if (column === "all") return direct;
+  const words = mode === "exact" ? [trimmed] : trimmed.split(/\s+/).filter((word) => word.length > 0);
+  const indexed = Prisma.sql`(${Prisma.join(
+    words.map((word) => likeClause("all", `%${escapeLike(word)}%`, word, "contains")),
+    " AND ",
+  )})`;
+  return Prisma.sql`(${indexed} AND ${direct})`;
+}
+
+function clauseSql(clause: SearchClause): Prisma.Sql | null {
+  const sql = textFilter(clause.query, clause.mode, clause.column);
+  if (!sql) return null;
+  return clause.exclude ? Prisma.sql`NOT (${sql})` : sql;
+}
+
+function combinedText(request: SearchRequest): Prisma.Sql | null {
+  const parts: { join: "and" | "or"; sql: Prisma.Sql }[] = [];
+  const main = textFilter(request.query, request.mode, request.column);
+  if (main) parts.push({ join: "and", sql: main });
+  for (const clause of request.clauses ?? []) {
+    const sql = clauseSql(clause);
+    if (sql) parts.push({ join: clause.join, sql });
+  }
+  if (parts.length === 0) return null;
+  let combined = parts[0].sql;
+  for (const part of parts.slice(1)) {
+    combined = part.join === "or" ? Prisma.sql`(${combined} OR ${part.sql})` : Prisma.sql`(${combined} AND ${part.sql})`;
+  }
+  return combined;
 }
 
 type FacetName = "areas" | "folders" | "nationalities" | "propertyTypes" | "files";
@@ -82,7 +141,7 @@ type FacetName = "areas" | "folders" | "nationalities" | "propertyTypes" | "file
 function whereSql(request: SearchRequest, except?: FacetName): Prisma.Sql {
   const filters = request.filters;
   const parts: Prisma.Sql[] = [Prisma.sql`f.status = 'done'`];
-  const text = textFilter(request.query, request.mode, request.column);
+  const text = combinedText(request);
   if (text) parts.push(text);
   if (except !== "areas" && filters.areas.length > 0) parts.push(Prisma.sql`f.area IN (${Prisma.join(filters.areas)})`);
   if (except !== "folders" && filters.folders.length > 0) parts.push(Prisma.sql`f.folder_path IN (${Prisma.join(filters.folders)})`);
@@ -151,6 +210,39 @@ function leadName(data: Record<string, string>): string {
   return data.owner_name || data.full_name || "";
 }
 
+function qualityFlags(data: Record<string, string>, name: string): string[] {
+  const flags: string[] = [];
+  if (!name.trim()) flags.push("Missing owner name");
+  const phone = [data.mobile, data.mobile_2].filter(Boolean).join(" ");
+  const digits = phone.replace(/\D/g, "");
+  if (phone.trim() && (digits.length < 7 || digits.length > 15)) flags.push("Phone number looks incomplete");
+  if (!data.project && !data.unit && !data.plot && !data.plot_no && !data.plot_number && !data.parcel) {
+    flags.push("No building, unit, or plot");
+  }
+  return flags;
+}
+
+async function countMatches(where: Prisma.Sql, narrowSql: Prisma.Sql): Promise<number | null> {
+  try {
+    const rows = await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '2500'");
+        return tx.$queryRaw<{ n: number }[]>`
+          SELECT COUNT(*)::int AS n
+          FROM rows r
+          JOIN files f ON f.id = r.file_id
+          ${where}
+          ${narrowSql}
+        `;
+      },
+      { maxWait: 5000, timeout: 8000 },
+    );
+    return Number(rows[0]?.n ?? 0);
+  } catch {
+    return null;
+  }
+}
+
 function toHit(row: RawHit, seen: number): SearchHit {
   const data = asRecord(row.data);
   const mobileRaw = [data.mobile, data.mobile_2].filter(Boolean).join(" / ");
@@ -178,6 +270,7 @@ function toHit(row: RawHit, seen: number): SearchHit {
     price: data.price || "",
     importedAt: row.importedAt ? row.importedAt.toISOString() : "",
     seen,
+    flags: qualityFlags(data, leadName(data)),
     extra,
   };
 }
@@ -207,11 +300,11 @@ function sortPage(hits: SearchHit[], sort: SearchRequest["sort"]): SearchHit[] {
 
 export async function search(request: SearchRequest): Promise<SearchResponse> {
   const started = Date.now();
-  const pageSize = Math.min(Math.max(request.pageSize || 100, 1), PAGE_LIMIT);
+  const pageSize = Math.min(Math.max(request.pageSize || 100, 1), request.pageSize > PAGE_LIMIT ? 2000 : PAGE_LIMIT);
   const page = Math.max(request.page || 1, 1);
   const offset = (page - 1) * pageSize;
   const where = whereSql(request);
-  const hasText = request.query.trim().length > 0;
+  const hasText = request.query.trim().length > 0 || (request.clauses ?? []).some((clause) => clause.query.trim().length > 0);
   const filters = request.filters;
   const unfiltered =
     !hasText &&
@@ -225,6 +318,7 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
     ? Prisma.sql`AND f.id = (SELECT id FROM files WHERE status = 'done' ORDER BY imported_at DESC NULLS LAST LIMIT 1)`
     : Prisma.empty;
   const orderSql = unfiltered ? Prisma.sql`ORDER BY r.row_number ASC` : Prisma.empty;
+  const countPromise = hasText && pageSize <= PAGE_LIMIT ? countMatches(where, narrowSql) : Promise.resolve(null);
   const fetched = await prisma.$queryRaw<RawHit[]>`
     SELECT r.id, r.row_number AS "rowNumber", r.data,
            f.id AS "fileId", f.original_name AS "fileName", f.area, f.folder_path AS folder, s.name AS sheet, f.imported_at AS "importedAt"
@@ -242,12 +336,16 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
     pageRows.map((hit) => toHit(hit, 1)),
     request.sort,
   );
+  const counted = await countPromise;
+  const exact = counted !== null;
 
   return {
     hits,
-    total: hits.length,
-    capped,
+    total: exact ? counted : offset + hits.length,
+    capped: exact ? false : capped,
     tookMs: Date.now() - started,
+    page,
+    pageSize,
     facets: {
       areas: tally(hits.map((hit) => hit.area)),
       folders: tally(hits.map((hit) => hit.folder)),

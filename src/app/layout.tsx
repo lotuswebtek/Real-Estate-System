@@ -26,6 +26,7 @@ export const metadata: Metadata = {
     template: "%s · Lead Finder",
   },
   description: "Search every real estate lead file from one place.",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

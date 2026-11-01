@@ -1,14 +1,29 @@
 export type SearchMode = "contains" | "exact" | "starts" | "ends";
 
-export type SearchColumn =
-  | "all"
-  | "name"
-  | "mobile"
-  | "email"
-  | "nationality"
-  | "project"
-  | "unit"
-  | "area";
+export const SEARCH_COLUMNS = [
+  "all",
+  "name",
+  "mobile",
+  "email",
+  "nationality",
+  "project",
+  "unit",
+  "plot",
+  "area",
+  "propertyType",
+  "bedrooms",
+  "role",
+] as const;
+
+export type SearchColumn = (typeof SEARCH_COLUMNS)[number];
+
+export type SearchClause = {
+  column: SearchColumn;
+  mode: SearchMode;
+  query: string;
+  join: "and" | "or";
+  exclude: boolean;
+};
 
 export type LeadFilters = {
   areas: string[];
@@ -23,6 +38,7 @@ export type SearchRequest = {
   query: string;
   mode: SearchMode;
   column: SearchColumn;
+  clauses: SearchClause[];
   filters: LeadFilters;
   page: number;
   pageSize: number;
@@ -48,6 +64,7 @@ export type SearchHit = {
   price: string;
   importedAt: string;
   seen: number;
+  flags: string[];
   mobileRaw: string;
   extra: { label: string; value: string }[];
 };
@@ -62,5 +79,7 @@ export type SearchResponse = {
   total: number;
   capped: boolean;
   tookMs: number;
+  page: number;
+  pageSize: number;
   facets: Record<string, FacetCount[]>;
 };

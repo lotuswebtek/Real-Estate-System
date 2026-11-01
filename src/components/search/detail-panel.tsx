@@ -2,13 +2,15 @@
 
 import type * as React from "react";
 
-import { Copy, MessageCircle, X } from "lucide-react";
+import { Bookmark, Copy, MessageCircle, Phone, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Highlight } from "@/components/search/highlight";
 import { Button } from "@/components/ui/button";
+import { readBookmarks, readNote, writeBookmarks, writeNote } from "@/lib/client/library";
 import { areaClass } from "@/lib/sample/areas";
 import type { SearchHit } from "@/lib/search/types";
-import { formatPhone, splitPhoneValues, whatsappHref } from "@/lib/phone";
+import { digitsOnly, formatPhone, splitPhoneValues, whatsappHref } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 
 async function copyValue(value: string) {
@@ -45,6 +47,13 @@ export function DetailPanel({
   const phones = splitPhoneValues(lead.mobileRaw);
   const primary = phones[0] ?? "";
   const whatsapp = primary ? whatsappHref(primary) : null;
+  const call = primary ? `tel:${digitsOnly(primary)}` : "";
+  const [note, setNote] = useState("");
+  const [bookmarked, setBookmarked] = useState(false);
+  useEffect(() => {
+    setNote(readNote(lead.id));
+    setBookmarked(readBookmarks().some((item) => item.id === lead.id));
+  }, [lead.id]);
 
   return (
     <div className="panel-in relative flex h-full min-h-0 flex-col">
@@ -67,6 +76,15 @@ export function DetailPanel({
           <span className={cn("rounded-md px-1.5 py-0.5 text-[12px] font-medium", areaClass(lead.area))}>{lead.area}</span>
           <span className="text-[12px] text-muted-foreground">{lead.nationality}</span>
         </div>
+        {(lead.flags ?? []).length > 0 ? (
+          <ul className="mt-3 space-y-1">
+            {lead.flags.map((flag) => (
+              <li key={flag} className="text-[12px] text-muted-foreground">
+                {flag}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
         <dl>
@@ -80,6 +98,13 @@ export function DetailPanel({
                   <Button type="button" variant="ghost" size="icon" aria-label={`Copy ${formatted}`} onClick={() => void copyValue(formatted)}>
                     <Copy />
                   </Button>
+                  {call ? (
+                    <Button type="button" variant="ghost" size="icon" asChild>
+                      <a href={call} aria-label={`Call ${formatted}`}>
+                        <Phone />
+                      </a>
+                    </Button>
+                  ) : null}
                   {link ? (
                     <Button type="button" variant="ghost" size="icon" asChild>
                       <a href={link} target="_blank" rel="noreferrer" aria-label="Open WhatsApp">
@@ -88,7 +113,7 @@ export function DetailPanel({
                     </Button>
                   ) : null}
                 </div>
-                {formatted !== phone.trim() ? <p className="mt-1 text-[12px] text-muted-foreground">As in the file: {phone}</p> : null}
+                {formatted !== phone.trim() ? <p className="mt-1 text-[12px] text-muted-foreground">Stored in the file: {phone}. The formatted number is for calling.</p> : null}
               </Field>
             );
           })}
@@ -128,13 +153,45 @@ export function DetailPanel({
             {lead.folder} › {lead.fileName} › {lead.sheet} › row{" "}
             <span className="font-mono tabular-nums">{lead.rowNumber}</span>
           </p>
-          <Button type="button" variant="outline" size="sm" className="mt-3" disabled title="This sample row is not a Drive file.">
-            Open in Google Drive
+          <p className="mt-2 text-[12px] text-muted-foreground">This is the original source row. It is not a merged record.</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              const current = readBookmarks().filter((item) => item.id !== lead.id);
+              if (!bookmarked) current.unshift({ id: lead.id, name: lead.name || "Lead", detail: `${lead.area} · ${lead.fileName}` });
+              writeBookmarks(current);
+              setBookmarked(!bookmarked);
+            }}
+          >
+            <Bookmark />
+            {bookmarked ? "Bookmarked" : "Bookmark"}
           </Button>
         </div>
 
+        <div className="mt-6">
+          <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">Note</h3>
+          <p className="mt-1 text-[12px] text-muted-foreground">Kept on this browser, separate from the imported file.</p>
+          <textarea
+            value={note}
+            onChange={(event) => {
+              setNote(event.target.value);
+              writeNote(lead.id, event.target.value);
+            }}
+            rows={3}
+            maxLength={2000}
+            aria-label="Lead note"
+            className="mt-2 w-full rounded-lg border border-border bg-card px-2 py-1.5 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          />
+        </div>
+
         <div className="mt-6 mb-4">
-          <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">Also appears in</h3>
+          <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">Potential matches</h3>
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            Same phone or email in {related.length} other file{related.length === 1 ? "" : "s"}. This does not confirm the same owner.
+          </p>
           {related.length === 0 ? (
             <p className="mt-2 text-[13px] text-muted-foreground">This phone and email are only in this file.</p>
           ) : (
@@ -158,7 +215,7 @@ export function DetailPanel({
         </div>
       </div>
       <div className="border-t border-border px-5 py-3 text-[12px] text-muted-foreground">
-        {whatsapp ? "WhatsApp uses the first number. " : null}
+        {whatsapp ? "WhatsApp and call use the first number. " : null}
         Arrow keys move between rows. Esc closes.
       </div>
     </div>

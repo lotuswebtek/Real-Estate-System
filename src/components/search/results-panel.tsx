@@ -7,7 +7,7 @@ import {
   type ColumnDef,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Copy, Download, Rows2, Rows3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Copy, Download, Phone, Rows2, Rows3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Highlight } from "@/components/search/highlight";
@@ -40,6 +40,17 @@ const WIDTHS: Record<string, number> = {
   source: 320,
 };
 
+const GROUP_OPTIONS = [
+  { id: "", label: "No grouping" },
+  { id: "name", label: "Owner" },
+  { id: "mobile", label: "Phone" },
+  { id: "project", label: "Building" },
+  { id: "area", label: "Area" },
+  { id: "unit", label: "Plot / unit" },
+] as const;
+
+type GroupBy = (typeof GROUP_OPTIONS)[number]["id"];
+
 const LABELS: Record<string, string> = {
   name: "Name",
   mobile: "Mobile",
@@ -66,6 +77,17 @@ function loadColumnPrefs(): { order: string[]; hidden: string[] } {
   } catch {
     return { order: DEFAULT_ORDER, hidden: [] };
   }
+}
+
+function groupLabel(lead: SearchHit, groupBy: Exclude<GroupBy, "">): string {
+  if (groupBy === "name") return lead.name.trim() || "No name";
+  if (groupBy === "mobile") {
+    const key = normalizePhoneKeys(lead.mobileRaw)[0];
+    return key ? formatPhone(key) : "No mobile";
+  }
+  if (groupBy === "project") return lead.project.trim() || "No building";
+  if (groupBy === "area") return lead.area.trim() || "No area";
+  return lead.unit.trim() || "No plot or unit";
 }
 
 function phoneActive(lead: SearchHit, query: string): boolean {
@@ -102,6 +124,7 @@ export function ResultsPanel({
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
   const [hidden, setHidden] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupBy>("");
 
   useEffect(() => {
     const prefs = loadColumnPrefs();
@@ -305,6 +328,21 @@ export function ResultsPanel({
                 ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                {GROUP_OPTIONS.find((item) => item.id === groupBy)?.label ?? "No grouping"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Group this page</DropdownMenuLabel>
+              {GROUP_OPTIONS.map((item) => (
+                <DropdownMenuCheckboxItem key={item.id || "none"} checked={groupBy === item.id} onCheckedChange={() => setGroupBy(item.id)}>
+                  {item.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button type="button" variant="outline" size="sm" onClick={onExport}>
             <Download />
             Export
@@ -312,7 +350,42 @@ export function ResultsPanel({
         </div>
       </div>
 
-      <div className="hidden min-h-0 flex-1 overflow-auto md:block">
+      {groupBy ? (
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <p className="px-1 text-[12px] text-muted-foreground">Grouped from the rows on this page. A shared name or phone is a potential match, not proof it is the same owner.</p>
+          {rows.length === 0 ? <p className="px-1 py-8 text-center text-[16px] font-medium">{searching ? "Searching…" : "No leads match"}</p> : null}
+          {(() => {
+            const groups = new Map<string, SearchHit[]>();
+            for (const lead of rows) {
+              const label = groupLabel(lead, groupBy);
+              groups.set(label, [...(groups.get(label) ?? []), lead]);
+            }
+            return [...groups.entries()]
+              .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+              .map(([label, leads]) => (
+                <details key={label} open className="rounded-lg border border-border">
+                  <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium">
+                    {label} <span className="font-mono text-[12px] text-muted-foreground tabular-nums">{leads.length}</span>
+                  </summary>
+                  <ul className="border-t border-border">
+                    {leads.map((lead) => (
+                      <li key={lead.id}>
+                        <button type="button" className={cn("w-full px-3 py-2 text-left hover:bg-muted", selectedId === lead.id && "bg-accent")} onClick={() => onSelect(lead.id)}>
+                          <span className="block text-[13px]">{lead.name || "No name"}</span>
+                          <span className="block text-[12px] text-muted-foreground">
+                            {lead.area} · {lead.project || lead.unit || "No property"} · {lead.fileName} · row {lead.rowNumber}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ));
+          })()}
+        </div>
+      ) : null}
+
+      <div className={cn("hidden min-h-0 flex-1 overflow-auto md:block", groupBy && "md:hidden")}>
         <table className="w-max min-w-full border-separate border-spacing-0">
           <thead>
             {table.getHeaderGroups().map((group) => (
@@ -391,7 +464,7 @@ export function ResultsPanel({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 md:hidden">
+      <div className={cn("min-h-0 flex-1 space-y-2 overflow-y-auto p-3 md:hidden", groupBy && "hidden")}>
         {rows.length === 0 ? (
           <div className="px-4 py-16 text-center">
             <p className="text-[16px] font-medium">{searching ? "Searching…" : "No leads match"}</p>
@@ -430,6 +503,12 @@ export function ResultsPanel({
                   <Copy className="size-3.5" />
                   Copy number
                 </button>
+                {first ? (
+                  <a href={`tel:${digitsOnly(first)}`} className="mt-2 ml-3 inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+                    <Phone className="size-3.5" />
+                    Call
+                  </a>
+                ) : null}
               </article>
             );
           })
