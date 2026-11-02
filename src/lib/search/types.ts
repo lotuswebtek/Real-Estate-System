@@ -41,6 +41,7 @@ export type LeadFilters = {
   folders: string[];
   nationalities: string[];
   propertyTypes: string[];
+  kinds: string[];
   files: string[];
   importedWithinDays: number | null;
 };

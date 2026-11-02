@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FIELD_CATALOG, fieldLabel, fieldMatches, plotTextVariants, storedKeys } from "@/lib/search/fields";
+import { propertyKindMatch } from "@/lib/search/kinds";
 
 describe("standardized search fields", () => {
   it("names the fields from the search examples", () => {
@@ -31,6 +32,18 @@ describe("standardized search fields", () => {
     expect(storedKeys("gfa")).toContain("gfa");
     expect(storedKeys("purchaseDate")).toContain("purchase_date");
     expect(FIELD_CATALOG.plot.keys).toContain("plot_number");
+  });
+
+  it("groups villa, plot, apartment, and the other stored kinds", () => {
+    expect(propertyKindMatch("villas / residential", "villa")).toBe(true);
+    expect(propertyKindMatch("residential plots / residential", "plot")).toBe(true);
+    expect(propertyKindMatch("land", "plot")).toBe(true);
+    expect(propertyKindMatch("Damac Islands Ttownhouses / 3 Bedroom", "plot")).toBe(false);
+    expect(propertyKindMatch("flat", "apartment")).toBe(true);
+    expect(propertyKindMatch("hotel apartment", "apartment")).toBe(true);
+    expect(propertyKindMatch("hotel apartment", "hotel")).toBe(false);
+    expect(propertyKindMatch("hotel rooms", "hotel")).toBe(true);
+    expect(propertyKindMatch("villa", "apartment")).toBe(false);
   });
 
   it("treats RC-14, RC14, and RC 14 as the same plot number", () => {

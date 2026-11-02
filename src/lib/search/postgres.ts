@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { phoneQueryKeys } from "@/lib/phone";
 import { FIELD_CATALOG, plotTextVariants, storedKeys } from "@/lib/search/fields";
+import { kindWordPattern, PROPERTY_KINDS } from "@/lib/search/kinds";
 import type { SearchClause, SearchColumn, SearchGroup, SearchHit, SearchMode, SearchRequest, SearchResponse } from "@/lib/search/types";
 
 const PAGE_LIMIT = 200;
@@ -121,6 +122,31 @@ function combinedText(request: SearchRequest): Prisma.Sql | null {
 
 type FacetName = "areas" | "folders" | "nationalities" | "propertyTypes" | "files";
 
+function kindFilter(ids: string[]): Prisma.Sql {
+  const selected = PROPERTY_KINDS.filter((kind) => ids.includes(kind.id));
+  const property = Prisma.sql`immutable_unaccent(COALESCE(r.data->>'property_type', ''))`;
+  const clauses = selected.map((kind) => {
+    const matches = Prisma.join(
+      kind.patterns.map((pattern) => Prisma.sql`${property} ~* ${kindWordPattern(pattern)}`),
+      " OR ",
+    );
+    const avoided = "avoid" in kind ? Prisma.sql`NOT (${Prisma.join(kind.avoid.map((pattern) => Prisma.sql`${property} ~* ${kindWordPattern(pattern)}`), " OR ")})` : null;
+    const indexedPatterns = kind.patterns.filter((pattern) => pattern !== "unit");
+    const parts = [Prisma.sql`(${matches})`];
+    if (indexedPatterns.length > 0) {
+      parts.unshift(
+        Prisma.sql`(${Prisma.join(
+          indexedPatterns.map((pattern) => Prisma.sql`immutable_unaccent(r.search_text) ILIKE ${`%${escapeLike(pattern)}%`} ESCAPE '\\'`),
+          " OR ",
+        )})`,
+      );
+    }
+    if (avoided) parts.push(avoided);
+    return Prisma.sql`(${Prisma.join(parts, " AND ")})`;
+  });
+  return Prisma.sql`(${Prisma.join(clauses, " OR ")})`;
+}
+
 function whereSql(request: SearchRequest, except?: FacetName): Prisma.Sql {
   const filters = request.filters;
   const parts: Prisma.Sql[] = [Prisma.sql`f.status = 'done'`];
@@ -137,6 +163,7 @@ function whereSql(request: SearchRequest, except?: FacetName): Prisma.Sql {
   if (except !== "files" && filters.files.length > 0) {
     parts.push(Prisma.sql`CASE WHEN COALESCE(f.folder_path, '') = '' THEN f.original_name ELSE f.folder_path || ' › ' || f.original_name END IN (${Prisma.join(filters.files)})`);
   }
+  if (filters.kinds.length > 0) parts.push(kindFilter(filters.kinds));
   if (filters.importedWithinDays) {
     const cutoff = new Date(Date.now() - filters.importedWithinDays * 24 * 60 * 60 * 1000);
     parts.push(Prisma.sql`f.imported_at >= ${cutoff}`);
@@ -305,6 +332,7 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
     filters.folders.length === 0 &&
     filters.nationalities.length === 0 &&
     filters.propertyTypes.length === 0 &&
+    filters.kinds.length === 0 &&
     filters.files.length === 0 &&
     !filters.importedWithinDays;
   const narrowSql = unfiltered

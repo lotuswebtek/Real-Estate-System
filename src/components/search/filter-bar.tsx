@@ -16,10 +16,11 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import type { MatchMode, SearchColumn } from "@/lib/sample/filter";
 import { columnLabel } from "@/lib/sample/filter";
 import { fieldMatches } from "@/lib/search/fields";
+import { PROPERTY_KINDS } from "@/lib/search/kinds";
 import { SEARCH_COLUMNS, type SearchClause, type SearchMode } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
 
-type Facet = { value: string; count: number };
+type Facet = { value: string; count: number; label?: string };
 
 const MODES: { id: MatchMode; label: string }[] = [
   { id: "contains", label: "Contains" },
@@ -82,7 +83,7 @@ function FacetOptions({
   onToggle: (value: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const shown = options.filter((option) => option.value.toLowerCase().includes(query.toLowerCase()));
+  const shown = options.filter((option) => `${option.label ?? ""} ${option.value}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <div>
       <Input
@@ -99,8 +100,8 @@ function FacetOptions({
           return (
             <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted">
               <Checkbox checked={checked} onCheckedChange={() => onToggle(option.value)} />
-              <span className="min-w-0 flex-1 truncate text-[13px]">{option.value}</span>
-              <span className="font-mono text-[12px] text-muted-foreground tabular-nums">{option.count.toLocaleString()}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px]">{option.label ?? option.value}</span>
+              {option.count > 0 ? <span className="font-mono text-[12px] text-muted-foreground tabular-nums">{option.count.toLocaleString()}</span> : null}
             </label>
           );
         })}
@@ -167,6 +168,7 @@ export function FilterBar({
   folders,
   nationalities,
   propertyTypes,
+  kinds,
   files,
   date,
   areaOptions,
@@ -189,6 +191,7 @@ export function FilterBar({
   folders: string[];
   nationalities: string[];
   propertyTypes: string[];
+  kinds: string[];
   files: string[];
   date: "all" | "7" | "30";
   areaOptions: Facet[];
@@ -198,7 +201,7 @@ export function FilterBar({
   fileOptions: Facet[];
   onMode: (mode: MatchMode) => void;
   onColumn: (column: SearchColumn) => void;
-  onToggle: (key: "areas" | "folders" | "nationalities" | "propertyTypes" | "files", value: string) => void;
+  onToggle: (key: "areas" | "folders" | "nationalities" | "propertyTypes" | "kinds" | "files", value: string) => void;
   onDate: (date: "all" | "7" | "30") => void;
   onClear: () => void;
   rules: SearchClause[];
@@ -209,6 +212,7 @@ export function FilterBar({
     ...folders.map((value) => ({ key: "folders" as const, value })),
     ...nationalities.map((value) => ({ key: "nationalities" as const, value })),
     ...propertyTypes.map((value) => ({ key: "propertyTypes" as const, value })),
+    ...kinds.map((value) => ({ key: "kinds" as const, value, label: PROPERTY_KINDS.find((kind) => kind.id === value)?.label ?? value })),
     ...files.map((value) => ({ key: "files" as const, value })),
   ];
   const dateLabel = date === "7" ? "Last 7 days" : date === "30" ? "Last 30 days" : "Any time";
@@ -220,6 +224,13 @@ export function FilterBar({
         <FilterChip label="Folder" selected={folders} options={folderOptions} onToggle={(value) => onToggle("folders", value)} mobile={mobile} />
         <FilterChip label="Nationality" selected={nationalities} options={nationalityOptions} onToggle={(value) => onToggle("nationalities", value)} mobile={mobile} />
         <FilterChip label="Property type" selected={propertyTypes} options={propertyTypeOptions} onToggle={(value) => onToggle("propertyTypes", value)} mobile={mobile} />
+        <FilterChip
+          label="Kind"
+          selected={kinds}
+          options={PROPERTY_KINDS.map((kind) => ({ value: kind.id, count: 0, label: kind.label }))}
+          onToggle={(value) => onToggle("kinds", value)}
+          mobile={mobile}
+        />
         <FilterChip label="File" selected={files} options={fileOptions} onToggle={(value) => onToggle("files", value)} mobile={mobile} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -261,7 +272,7 @@ export function FilterBar({
               onClick={() => onToggle(chip.key, chip.value)}
               className="inline-flex h-7 items-center gap-1 rounded-full bg-accent px-2.5 text-[12px] text-accent-foreground"
             >
-              {chip.value}
+              {"label" in chip ? chip.label : chip.value}
               <X className="size-3" />
               <span className="sr-only">Remove {chip.value}</span>
             </button>

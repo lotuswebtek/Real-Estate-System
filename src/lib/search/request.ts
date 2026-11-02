@@ -1,4 +1,5 @@
 import { activeClauses } from "@/lib/search/clauses";
+import { knownKinds } from "@/lib/search/kinds";
 import type { SearchColumn, SearchMode, SearchRequest } from "@/lib/search/types";
 import { SEARCH_COLUMNS } from "@/lib/search/types";
 
@@ -32,6 +33,7 @@ export function searchRequestFromUrl(url: URL, pageSize = 200): SearchRequest {
       folders: list(url, "folder"),
       nationalities: list(url, "nationality"),
       propertyTypes: list(url, "type"),
+      kinds: knownKinds(list(url, "kind")),
       files: list(url, "file"),
       importedWithinDays: date === "7" ? 7 : date === "30" ? 30 : null,
     },

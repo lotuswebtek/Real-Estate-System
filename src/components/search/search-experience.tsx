@@ -121,6 +121,7 @@ export function SearchExperience() {
       folder: parseAsArrayOf(parseAsString, "|").withDefault([]),
       nationality: parseAsArrayOf(parseAsString, "|").withDefault([]),
       type: parseAsArrayOf(parseAsString, "|").withDefault([]),
+      kind: parseAsArrayOf(parseAsString, "|").withDefault([]),
       file: parseAsArrayOf(parseAsString, "|").withDefault([]),
       date: parseAsStringLiteral(DATES).withDefault("all"),
       sort: parseAsString.withDefault(""),
@@ -171,6 +172,7 @@ export function SearchExperience() {
     if (state.folder.length) params.set("folder", state.folder.join("|"));
     if (state.nationality.length) params.set("nationality", state.nationality.join("|"));
     if (state.type.length) params.set("type", state.type.join("|"));
+    if (state.kind.length) params.set("kind", state.kind.join("|"));
     if (state.file.length) params.set("file", state.file.join("|"));
     if (state.date !== "all") params.set("date", state.date);
     if (state.sort) {
@@ -317,6 +319,7 @@ export function SearchExperience() {
                           folder: list("folder"),
                           nationality: list("nationality"),
                           type: list("type"),
+                          kind: list("kind"),
                           file: list("file"),
                           date: date === "7" || date === "30" ? date : "all",
                         });
@@ -493,6 +496,7 @@ export function SearchExperience() {
             folders={state.folder}
             nationalities={state.nationality}
             propertyTypes={state.type}
+            kinds={state.kind}
             files={state.file}
             date={state.date}
             areaOptions={areaOptions}
@@ -507,13 +511,14 @@ export function SearchExperience() {
               if (key === "folders") void setState({ folder: toggleValue(state.folder, value), page: 1 });
               if (key === "nationalities") void setState({ nationality: toggleValue(state.nationality, value), page: 1 });
               if (key === "propertyTypes") void setState({ type: toggleValue(state.type, value), page: 1 });
+              if (key === "kinds") void setState({ kind: toggleValue(state.kind, value), page: 1 });
               if (key === "files") void setState({ file: toggleValue(state.file, value), page: 1 });
             }}
             onDate={(date) => void setState({ date, page: 1 })}
             onClear={() => {
               setDraft("");
               setRuleDraft([]);
-              void setState({ q: "", area: [], folder: [], nationality: [], type: [], file: [], date: "all", rules: "", page: 1 });
+              void setState({ q: "", area: [], folder: [], nationality: [], type: [], kind: [], file: [], date: "all", rules: "", page: 1 });
             }}
             rules={ruleDraft}
             onRules={setRuleDraft}
