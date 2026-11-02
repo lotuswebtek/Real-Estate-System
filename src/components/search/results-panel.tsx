@@ -455,7 +455,9 @@ export function ResultsPanel({
               <tr key={group.id}>
                 {group.headers.map((header) => {
                   const id = header.column.id;
-                  const active = sort === id;
+                  const activeSort = sort || "name";
+                  const active = activeSort === id;
+                  const activeDirection = sort ? direction : "asc";
                   return (
                     <th
                       key={header.id}
@@ -472,7 +474,7 @@ export function ResultsPanel({
                       <button type="button" className="inline-flex items-center gap-1" onClick={() => onSort(id)}>
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {active ? (
-                          direction === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
+                          activeDirection === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
                         ) : (
                           <ArrowUpDown className="size-3 opacity-40" />
                         )}

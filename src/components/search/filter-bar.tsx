@@ -38,7 +38,11 @@ function chipClass(active: boolean) {
 
 export function ColumnSelect({ value, onChange }: { value: SearchColumn; onChange: (column: SearchColumn) => void }) {
   const [query, setQuery] = useState("");
-  const shown = SEARCH_COLUMNS.filter((column) => fieldMatches(column, query));
+  const shown = SEARCH_COLUMNS.filter((column) => fieldMatches(column, query)).sort((left, right) => {
+    if (left === "all") return -1;
+    if (right === "all") return 1;
+    return columnLabel(left).localeCompare(columnLabel(right));
+  });
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -83,7 +87,9 @@ function FacetOptions({
   onToggle: (value: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const shown = options.filter((option) => `${option.label ?? ""} ${option.value}`.toLowerCase().includes(query.toLowerCase()));
+  const shown = options
+    .filter((option) => `${option.label ?? ""} ${option.value}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((left, right) => (left.label ?? left.value).localeCompare(right.label ?? right.value));
   return (
     <div>
       <Input
@@ -227,7 +233,7 @@ export function FilterBar({
         <FilterChip
           label="Kind"
           selected={kinds}
-          options={PROPERTY_KINDS.map((kind) => ({ value: kind.id, count: 0, label: kind.label }))}
+          options={[...PROPERTY_KINDS].sort((left, right) => left.label.localeCompare(right.label)).map((kind) => ({ value: kind.id, count: 0, label: kind.label }))}
           onToggle={(value) => onToggle("kinds", value)}
           mobile={mobile}
         />

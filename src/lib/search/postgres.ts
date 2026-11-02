@@ -309,6 +309,21 @@ const HIT_SORT: Record<string, (hit: SearchHit) => string> = {
   importedAt: (hit) => hit.importedAt,
 };
 
+function orderExpr(field: string): Prisma.Sql {
+  if (field === "fileName" || field === "source") return Prisma.sql`NULLIF(lower(immutable_unaccent(btrim(f.original_name))), '') COLLATE "C"`;
+  if (field === "importedAt") return Prisma.sql`f.imported_at`;
+  const columns = ["name", "mobile", "email", "nationality", "area", "project", "unit", "propertyType"] as const;
+  const column = columns.find((item) => item === field) ?? "name";
+  return Prisma.sql`NULLIF(lower(immutable_unaccent(btrim(${columnExpr(column)}))), '') COLLATE "C"`;
+}
+
+function resultOrder(request: SearchRequest, unfiltered: boolean): Prisma.Sql {
+  if (unfiltered) return Prisma.sql`ORDER BY r.row_number ASC`;
+  const field = request.sort?.field || "name";
+  const direction = request.sort?.direction === "desc" ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+  return Prisma.sql`ORDER BY ${orderExpr(field)} ${direction} NULLS LAST, r.id ASC`;
+}
+
 function sortPage(hits: SearchHit[], sort: SearchRequest["sort"]): SearchHit[] {
   const pick = sort?.field ? HIT_SORT[sort.field] : undefined;
   if (!pick) return hits;
@@ -338,7 +353,7 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
   const narrowSql = unfiltered
     ? Prisma.sql`AND f.id = (SELECT id FROM files WHERE status = 'done' ORDER BY imported_at DESC NULLS LAST LIMIT 1)`
     : Prisma.empty;
-  const orderSql = unfiltered ? Prisma.sql`ORDER BY r.row_number ASC` : Prisma.empty;
+  const orderSql = resultOrder(request, unfiltered);
   const countPromise = hasText && pageSize <= PAGE_LIMIT ? countMatches(where, narrowSql) : Promise.resolve(null);
   const fetched = await prisma.$queryRaw<RawHit[]>`
     SELECT r.id, r.row_number AS "rowNumber", r.data, r.phone_keys AS "phoneKeys",
