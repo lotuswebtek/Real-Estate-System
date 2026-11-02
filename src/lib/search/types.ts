@@ -81,6 +81,27 @@ export type FacetCount = {
   count: number;
 };
 
+export type SearchGroupProperty = {
+  id: string;
+  area: string;
+  project: string;
+  unit: string;
+  plot: string;
+  folder: string;
+  fileName: string;
+  rowNumber: number;
+};
+
+export type SearchGroup = {
+  key: string;
+  label: string;
+  records: number;
+  files: number;
+  areas: number;
+  buildings: number;
+  properties: SearchGroupProperty[];
+};
+
 export type SearchResponse = {
   hits: SearchHit[];
   total: number;

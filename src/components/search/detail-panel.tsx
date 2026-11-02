@@ -40,7 +40,7 @@ export function DetailPanel({
 }: {
   lead: SearchHit;
   query: string;
-  related: Pick<SearchHit, "id" | "area" | "folder" | "fileName" | "rowNumber">[];
+  related: Pick<SearchHit, "id" | "area" | "folder" | "fileName" | "rowNumber" | "project" | "unit" | "plot">[];
   onOpenRelated: (id: string) => void;
   onClose?: () => void;
 }) {
@@ -194,10 +194,10 @@ export function DetailPanel({
         <div className="mt-6 mb-4">
           <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">Potential matches</h3>
           <p className="mt-1 text-[12px] text-muted-foreground">
-            Same phone or email in {related.length} other file{related.length === 1 ? "" : "s"}. This does not confirm the same owner.
+            {related.length} other source record{related.length === 1 ? "" : "s"} share this phone or email. A shared number is not verified ownership. Each row stays a separate source record.
           </p>
           {related.length === 0 ? (
-            <p className="mt-2 text-[13px] text-muted-foreground">This phone and email are only in this file.</p>
+            <p className="mt-2 text-[13px] text-muted-foreground">No other source record has this phone or email.</p>
           ) : (
             <ul className="mt-2 space-y-1">
               {related.map((item) => (
@@ -207,7 +207,7 @@ export function DetailPanel({
                     onClick={() => onOpenRelated(item.id)}
                     className="w-full rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-muted"
                   >
-                    <span className="block text-[13px]">{item.area}</span>
+                    <span className="block text-[13px]">{[item.area, item.project, item.plot || item.unit].filter(Boolean).join(" · ") || "No property"}</span>
                     <span className="block text-[12px] text-muted-foreground">
                       {item.folder} › {item.fileName} › row {item.rowNumber}
                     </span>

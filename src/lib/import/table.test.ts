@@ -3,7 +3,7 @@ import { normalizeHeader } from "@/lib/columns/headers";
 import { cellToText } from "@/lib/import/cells";
 import { areaFromFileName, duplicateTarget, shouldSkipFileName } from "@/lib/import/names";
 import { findHeaderIndex, masterKeyForHeader, parseGrid } from "@/lib/import/table";
-import { normalizePhoneKeys } from "@/lib/phone";
+import { normalizePhoneKeys, phoneQueryKeys } from "@/lib/phone";
 
 describe("header normalization", () => {
   it("splits camel case and tidies punctuation", () => {
@@ -59,6 +59,15 @@ describe("UAE phone keys", () => {
 
   it("keeps every number in one cell", () => {
     expect(normalizePhoneKeys("0501234567 / 0559876543")).toEqual(["501234567", "559876543"]);
+  });
+
+  it("keeps a spaced number together and accepts another country code", () => {
+    expect(phoneQueryKeys("+971 50 123 4567")).toEqual(expected);
+    expect(phoneQueryKeys("050-123-4567")).toEqual(expected);
+    expect(phoneQueryKeys("+971501234567, 0501234567")).toEqual(expected);
+    expect(phoneQueryKeys("0501234567 0559876543")).toEqual(["501234567", "559876543"]);
+    expect(phoneQueryKeys("+44 20 7946 0958")).toEqual(phoneQueryKeys("0044-20-7946-0958"));
+    expect(phoneQueryKeys("hussain 0501234567")).toBeNull();
   });
 });
 

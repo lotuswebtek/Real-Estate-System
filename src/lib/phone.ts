@@ -30,6 +30,44 @@ export function normalizePhoneKeys(raw: string): string[] {
   return keys;
 }
 
+function splitSpacedNumbers(chunk: string): string[] {
+  const tokens = chunk.split(/\s+/).filter((token) => token.length > 0);
+  if (tokens.length <= 1) return tokens.length === 0 ? [] : [chunk.trim()];
+  const groups: string[][] = [];
+  let current: string[] = [];
+  for (const token of tokens) {
+    const tokenDigits = digitsOnly(token).length;
+    const currentDigits = digitsOnly(current.join("")).length;
+    if (tokenDigits >= 7 && currentDigits >= 7) {
+      groups.push(current);
+      current = [token];
+      continue;
+    }
+    current.push(token);
+  }
+  if (current.length > 0) groups.push(current);
+  return groups.map((parts) => parts.join(" "));
+}
+
+export function phoneQueryKeys(raw: string): string[] | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const chunks = trimmed
+    .split(PHONE_SPLIT)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const keys: string[] = [];
+  for (const chunk of chunks.length > 0 ? chunks : [trimmed]) {
+    for (const part of splitSpacedNumbers(chunk)) {
+      if (!isPhoneQuery(part)) return null;
+      const key = phoneKeyFromDigits(digitsOnly(part));
+      if (!key || keys.includes(key)) continue;
+      keys.push(key);
+    }
+  }
+  return keys.length > 0 ? keys : null;
+}
+
 function nationalMobile(digits: string): string | null {
   let national = digits;
   if (national.startsWith("00971")) national = national.slice(5);

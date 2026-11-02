@@ -194,7 +194,18 @@ export function SearchExperience() {
 
   const sorted = searchQuery.data?.hits ?? emptyHits;
   const seen = useMemo(() => new Map(sorted.map((lead) => [lead.id, lead.seen || 1])), [sorted]);
-  const selected = sorted.find((lead) => lead.id === state.row) ?? null;
+  const onPage = sorted.find((lead) => lead.id === state.row) ?? null;
+  const leadQuery = useQuery({
+    queryKey: ["lead", state.row],
+    enabled: Boolean(state.row) && !onPage,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/rows/${state.row}`, { signal });
+      if (!response.ok) return null;
+      const body = (await response.json()) as { lead: SearchHit | null };
+      return body.lead;
+    },
+  });
+  const selected = onPage ?? leadQuery.data ?? null;
   const relatedQuery = useQuery({
     queryKey: ["related", state.row],
     enabled: Boolean(state.row),
@@ -493,6 +504,7 @@ export function SearchExperience() {
             rows={sorted}
             searching={searchQuery.isFetching && sorted.length === 0}
             query={state.q}
+            searchParams={searchParams}
             selectedId={selected?.id ?? null}
             seen={seen}
             sort={state.sort}

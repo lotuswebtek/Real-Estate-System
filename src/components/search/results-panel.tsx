@@ -7,6 +7,7 @@ import {
   type ColumnDef,
   type VisibilityState,
 } from "@tanstack/react-table";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Copy, Download, Phone, Rows2, Rows3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -22,8 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useDensity } from "@/components/providers";
 import { areaClass } from "@/lib/sample/areas";
-import type { SearchHit } from "@/lib/search/types";
-import { formatPhone, isPhoneQuery, normalizePhoneKeys, phoneKeyFromDigits, digitsOnly, splitPhoneValues } from "@/lib/phone";
+import type { SearchGroup, SearchHit } from "@/lib/search/types";
+import { formatPhone, normalizePhoneKeys, phoneQueryKeys, digitsOnly, splitPhoneValues } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 
 const FLEX_IDS = ["email", "nationality", "area", "project", "plot", "unit", "propertyType", "source"] as const;
@@ -93,16 +94,17 @@ function groupLabel(lead: SearchHit, groupBy: Exclude<GroupBy, "">): string {
 }
 
 function phoneActive(lead: SearchHit, query: string): boolean {
-  if (!isPhoneQuery(query)) return false;
-  const key = phoneKeyFromDigits(digitsOnly(query));
-  if (!key) return false;
-  return normalizePhoneKeys(lead.mobileRaw).includes(key);
+  const keys = phoneQueryKeys(query);
+  if (!keys) return false;
+  const leadKeys = normalizePhoneKeys(lead.mobileRaw);
+  return keys.some((key) => leadKeys.includes(key));
 }
 
 export function ResultsPanel({
   rows,
   searching = false,
   query,
+  searchParams,
   selectedId,
   seen,
   sort,
@@ -114,6 +116,7 @@ export function ResultsPanel({
   rows: SearchHit[];
   searching?: boolean;
   query: string;
+  searchParams: string;
   selectedId: string | null;
   seen: Map<string, number>;
   sort: string;
@@ -127,6 +130,17 @@ export function ResultsPanel({
   const [hidden, setHidden] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("");
+  const serverGroup = groupBy === "mobile" || groupBy === "name";
+  const canGroup = /(?:^|&)(?:q|rules)=[^&]+/.test(searchParams);
+  const groupQuery = useQuery({
+    queryKey: ["groups", groupBy, searchParams],
+    enabled: serverGroup && canGroup,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/search/groups?by=${groupBy}&${searchParams}`, { signal });
+      if (!response.ok) throw new Error("Groups could not load.");
+      return (await response.json()) as { groups: SearchGroup[] };
+    },
+  });
 
   useEffect(() => {
     const prefs = loadColumnPrefs();
@@ -155,7 +169,7 @@ export function ResultsPanel({
               </span>
               {count > 1 ? (
                 <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[12px] font-medium text-accent-foreground">
-                  Seen in {count} files
+                  Potential match in {count} files
                 </span>
               ) : null}
             </div>
@@ -358,7 +372,48 @@ export function ResultsPanel({
         </div>
       </div>
 
-      {groupBy ? (
+      {serverGroup ? (
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          <p className="px-1 text-[12px] text-muted-foreground">
+            Potential matches across every file. A shared phone or owner name is not verified ownership, and each property stays a separate source record.
+          </p>
+          {!canGroup ? <p className="px-1 py-8 text-center text-[16px] font-medium">Search a phone number or owner name to group the matches.</p> : null}
+          {canGroup && groupQuery.isFetching ? <p className="px-1 py-8 text-center text-[16px] font-medium">Grouping…</p> : null}
+          {canGroup && groupQuery.isError ? <p className="px-1 py-8 text-center text-[16px] font-medium">Grouping did not finish. The full list still has every matching record.</p> : null}
+          {canGroup && !groupQuery.isFetching && groupQuery.data && groupQuery.data.groups.length === 0 ? (
+            <p className="px-1 py-8 text-center text-[16px] font-medium">No phone or owner groups. The full list still has every matching record.</p>
+          ) : null}
+          {canGroup ? groupQuery.data?.groups.map((group) => (
+            <details key={group.key} open className="rounded-lg border border-border">
+              <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium">
+                <span>{groupBy === "mobile" ? formatPhone(group.label) : group.label || "No owner name"}</span>
+                <span className="ml-2 font-mono text-[12px] text-muted-foreground tabular-nums">
+                  {group.records.toLocaleString()} records · {group.files.toLocaleString()} files · {group.areas.toLocaleString()} areas · {group.buildings.toLocaleString()} buildings
+                </span>
+              </summary>
+              <ul className="border-t border-border">
+                {group.properties.map((property) => (
+                  <li key={property.id}>
+                    <button type="button" className={cn("w-full px-3 py-2 text-left hover:bg-muted", selectedId === property.id && "bg-accent")} onClick={() => onSelect(property.id)}>
+                      <span className="block text-[13px]">{[property.area, property.project, property.plot || property.unit].filter(Boolean).join(" · ") || "No property"}</span>
+                      <span className="block text-[12px] text-muted-foreground">
+                        {property.folder} › {property.fileName} › row {property.rowNumber}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {group.records > group.properties.length ? (
+                <p className="border-t border-border px-3 py-2 text-[12px] text-muted-foreground">
+                  Showing {group.properties.length} of {group.records.toLocaleString()} source records.
+                </p>
+              ) : null}
+            </details>
+          )) : null}
+        </div>
+      ) : null}
+
+      {groupBy && !serverGroup ? (
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           <p className="px-1 text-[12px] text-muted-foreground">Grouped from the rows on this page. A shared name or phone is a potential match, not proof it is the same owner.</p>
           {rows.length === 0 ? <p className="px-1 py-8 text-center text-[16px] font-medium">{searching ? "Searching…" : "No leads match"}</p> : null}
@@ -496,7 +551,7 @@ export function ResultsPanel({
                     </div>
                     <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-medium", areaClass(lead.area))}>{lead.area}</span>
                   </div>
-                  {count > 1 ? <p className="mt-2 text-[12px] text-accent-foreground">Seen in {count} files</p> : null}
+                  {count > 1 ? <p className="mt-2 text-[12px] text-accent-foreground">Potential match in {count} files</p> : null}
                   <p className="mt-2 truncate text-[12px] text-muted-foreground">
                     {lead.folder} › {lead.fileName}
                   </p>

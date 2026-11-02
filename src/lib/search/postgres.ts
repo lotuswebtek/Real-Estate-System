@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { digitsOnly, isPhoneQuery, phoneKeyFromDigits } from "@/lib/phone";
+import { phoneQueryKeys } from "@/lib/phone";
 import { FIELD_CATALOG, plotTextVariants, storedKeys } from "@/lib/search/fields";
-import type { SearchClause, SearchColumn, SearchHit, SearchMode, SearchRequest, SearchResponse } from "@/lib/search/types";
+import type { SearchClause, SearchColumn, SearchGroup, SearchHit, SearchMode, SearchRequest, SearchResponse } from "@/lib/search/types";
 
 const PAGE_LIMIT = 200;
 
@@ -47,16 +47,8 @@ function columnExpr(column: Exclude<SearchColumn, "all">): Prisma.Sql {
 
 function phoneFilter(trimmed: string, column: SearchColumn): Prisma.Sql | null {
   if (column !== "all" && column !== "mobile" && column !== "mobile2") return null;
-  const pieces = trimmed.split(/[\s,;|/]+/).map((part) => part.trim()).filter((part) => part.length > 0);
-  if (pieces.length === 0) return null;
-  const keys: string[] = [];
-  for (const piece of pieces) {
-    if (!isPhoneQuery(piece)) return null;
-    const key = phoneKeyFromDigits(digitsOnly(piece));
-    if (!key) return null;
-    keys.push(key);
-  }
-  if (keys.length === 0) return null;
+  const keys = phoneQueryKeys(trimmed);
+  if (!keys) return null;
   const overlap = Prisma.sql`r.phone_keys && ${keys}::text[]`;
   if (column === "all") return overlap;
   const dataKey = column === "mobile" ? "mobile" : "mobile_2";
@@ -168,6 +160,7 @@ type RawHit = {
   id: string;
   rowNumber: number;
   data: unknown;
+  phoneKeys: string[];
   fileId: string;
   fileName: string;
   area: string | null;
@@ -319,7 +312,7 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
   const orderSql = unfiltered ? Prisma.sql`ORDER BY r.row_number ASC` : Prisma.empty;
   const countPromise = hasText && pageSize <= PAGE_LIMIT ? countMatches(where, narrowSql) : Promise.resolve(null);
   const fetched = await prisma.$queryRaw<RawHit[]>`
-    SELECT r.id, r.row_number AS "rowNumber", r.data,
+    SELECT r.id, r.row_number AS "rowNumber", r.data, r.phone_keys AS "phoneKeys",
            f.id AS "fileId", f.original_name AS "fileName", f.area, f.folder_path AS folder, s.name AS sheet, f.imported_at AS "importedAt"
     FROM rows r
     JOIN files f ON f.id = r.file_id
@@ -331,8 +324,9 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
   `;
   const capped = fetched.length > pageSize;
   const pageRows = capped ? fetched.slice(0, pageSize) : fetched;
+  const fileCounts = await filesForPhoneKeys(pageRows.flatMap((row) => row.phoneKeys ?? []));
   const hits = sortPage(
-    pageRows.map((hit) => toHit(hit, 1)),
+    pageRows.map((hit) => toHit(hit, seenInFiles(hit.phoneKeys ?? [], fileCounts))),
     request.sort,
   );
   const counted = await countPromise;
@@ -355,12 +349,20 @@ export async function search(request: SearchRequest): Promise<SearchResponse> {
   };
 }
 
-export async function relatedHits(id: string): Promise<Pick<SearchHit, "id" | "area" | "folder" | "fileName" | "rowNumber">[]> {
+const RELATED_PICK = ["id", "area", "folder", "fileName", "rowNumber", "project", "unit", "plot"] as const;
+
+export async function relatedHits(id: string): Promise<Pick<SearchHit, (typeof RELATED_PICK)[number]>[]> {
   const row = await prisma.row.findUnique({ where: { id }, select: { phoneKeys: true, emailKeys: true } });
   if (!row || (row.phoneKeys.length === 0 && row.emailKeys.length === 0)) return [];
   return prisma.$queryRaw`
-    SELECT DISTINCT ON (r.file_id) r.id, COALESCE(f.area, '') AS area, COALESCE(f.folder_path, '') AS folder,
-           f.original_name AS "fileName", r.row_number AS "rowNumber"
+    SELECT r.id,
+           COALESCE(NULLIF(r.data->>'area', ''), f.area, '') AS area,
+           COALESCE(f.folder_path, '') AS folder,
+           f.original_name AS "fileName",
+           r.row_number AS "rowNumber",
+           COALESCE(r.data->>'project', '') AS project,
+           COALESCE(r.data->>'unit', '') AS unit,
+           COALESCE(NULLIF(r.data->>'plot', ''), NULLIF(r.data->>'plot_number', ''), '') AS plot
     FROM rows r
     JOIN files f ON f.id = r.file_id
     WHERE f.status = 'done' AND r.id <> ${id}
@@ -368,7 +370,187 @@ export async function relatedHits(id: string): Promise<Pick<SearchHit, "id" | "a
         (${row.phoneKeys}::text[] <> '{}' AND r.phone_keys && ${row.phoneKeys}::text[])
         OR (${row.emailKeys}::text[] <> '{}' AND r.email_keys && ${row.emailKeys}::text[])
       )
-    ORDER BY r.file_id, r.row_number
-    LIMIT 30
+    ORDER BY f.original_name, r.row_number
+    LIMIT 50
   `;
+}
+
+export async function hitById(id: string): Promise<SearchHit | null> {
+  const rows = await prisma.$queryRaw<RawHit[]>`
+    SELECT r.id, r.row_number AS "rowNumber", r.data, r.phone_keys AS "phoneKeys",
+           f.id AS "fileId", f.original_name AS "fileName", f.area, f.folder_path AS folder, s.name AS sheet, f.imported_at AS "importedAt"
+    FROM rows r
+    JOIN files f ON f.id = r.file_id
+    JOIN sheets s ON s.id = r.sheet_id
+    WHERE r.id = ${id}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  const counts = await filesForPhoneKeys(row.phoneKeys ?? []);
+  return toHit(row, seenInFiles(row.phoneKeys ?? [], counts));
+}
+
+function seenInFiles(keys: string[], counts: Map<string, number>): number {
+  let seen = 1;
+  for (const key of keys) seen = Math.max(seen, counts.get(key) ?? 1);
+  return seen;
+}
+
+async function filesForPhoneKeys(keys: string[]): Promise<Map<string, number>> {
+  const unique = [...new Set(keys.filter((key) => key.length > 0))].slice(0, 200);
+  if (unique.length === 0) return new Map();
+  try {
+    const rows = await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '2500'");
+        return tx.$queryRaw<{ key: string; files: number }[]>`
+          SELECT key, COUNT(DISTINCT r.file_id)::int AS files
+          FROM rows r
+          JOIN files f ON f.id = r.file_id
+          CROSS JOIN LATERAL unnest(r.phone_keys) AS key
+          WHERE f.status = 'done' AND r.phone_keys && ${unique}::text[] AND key = ANY(${unique}::text[])
+          GROUP BY key
+        `;
+      },
+      { maxWait: 2000, timeout: 5000 },
+    );
+    return new Map(rows.map((row) => [row.key, Number(row.files)]));
+  } catch {
+    return new Map();
+  }
+}
+
+type GroupRow = {
+  key: string;
+  label: string;
+  records: number;
+  files: number;
+  areas: number;
+  buildings: number;
+};
+
+type GroupPropertyRow = SearchGroup["properties"][number] & { key: string };
+
+export async function searchGroups(request: SearchRequest, by: "name" | "mobile"): Promise<SearchGroup[]> {
+  const hasText = request.query.trim().length > 0 || (request.clauses ?? []).some((clause) => clause.query.trim().length > 0);
+  if (!hasText) return [];
+  const where = whereSql(request);
+  try {
+    return await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '8000'");
+        const grouped =
+          by === "mobile"
+            ? await tx.$queryRaw<GroupRow[]>`
+                SELECT key,
+                       MIN(COALESCE(NULLIF(r.data->>'mobile', ''), NULLIF(r.data->>'mobile_2', ''), key)) AS label,
+                       COUNT(*)::int AS records,
+                       COUNT(DISTINCT r.file_id)::int AS files,
+                       COUNT(DISTINCT NULLIF(COALESCE(NULLIF(r.data->>'area', ''), NULLIF(f.area, ''), ''), ''))::int AS areas,
+                       COUNT(DISTINCT NULLIF(COALESCE(r.data->>'project', ''), ''))::int AS buildings
+                FROM rows r
+                JOIN files f ON f.id = r.file_id
+                CROSS JOIN LATERAL unnest(r.phone_keys) AS key
+                ${where}
+                AND key <> ''
+                GROUP BY key
+                ORDER BY records DESC, key
+                LIMIT 40
+              `
+            : await tx.$queryRaw<GroupRow[]>`
+                SELECT key,
+                       MIN(label) AS label,
+                       COUNT(*)::int AS records,
+                       COUNT(DISTINCT file_id)::int AS files,
+                       COUNT(DISTINCT NULLIF(area, ''))::int AS areas,
+                       COUNT(DISTINCT NULLIF(project, ''))::int AS buildings
+                FROM (
+                  SELECT lower(immutable_unaccent(${columnExpr("name")})) AS key,
+                         ${columnExpr("name")} AS label,
+                         r.file_id,
+                         COALESCE(NULLIF(r.data->>'area', ''), f.area, '') AS area,
+                         COALESCE(r.data->>'project', '') AS project
+                  FROM rows r
+                  JOIN files f ON f.id = r.file_id
+                  ${where}
+                ) named
+                WHERE key <> ''
+                GROUP BY key
+                ORDER BY records DESC, key
+                LIMIT 40
+              `;
+        if (grouped.length === 0) return [];
+        const keys = grouped.map((group) => group.key);
+        const properties =
+          by === "mobile"
+            ? await tx.$queryRaw<GroupPropertyRow[]>`
+                SELECT key, id, area, project, unit, plot, folder, "fileName", "rowNumber"
+                FROM (
+                  SELECT key, r.id,
+                         COALESCE(NULLIF(r.data->>'area', ''), f.area, '') AS area,
+                         COALESCE(r.data->>'project', '') AS project,
+                         COALESCE(r.data->>'unit', '') AS unit,
+                         COALESCE(NULLIF(r.data->>'plot', ''), NULLIF(r.data->>'plot_number', ''), '') AS plot,
+                         COALESCE(f.folder_path, '') AS folder,
+                         f.original_name AS "fileName",
+                         r.row_number AS "rowNumber",
+                         ROW_NUMBER() OVER (PARTITION BY key ORDER BY f.original_name, r.row_number) AS n
+                  FROM rows r
+                  JOIN files f ON f.id = r.file_id
+                  CROSS JOIN LATERAL unnest(r.phone_keys) AS key
+                  ${where}
+                  AND key = ANY(${keys}::text[])
+                ) listed
+                WHERE n <= 25
+              `
+            : await tx.$queryRaw<GroupPropertyRow[]>`
+                SELECT key, id, area, project, unit, plot, folder, "fileName", "rowNumber"
+                FROM (
+                  SELECT lower(immutable_unaccent(${columnExpr("name")})) AS key, r.id,
+                         COALESCE(NULLIF(r.data->>'area', ''), f.area, '') AS area,
+                         COALESCE(r.data->>'project', '') AS project,
+                         COALESCE(r.data->>'unit', '') AS unit,
+                         COALESCE(NULLIF(r.data->>'plot', ''), NULLIF(r.data->>'plot_number', ''), '') AS plot,
+                         COALESCE(f.folder_path, '') AS folder,
+                         f.original_name AS "fileName",
+                         r.row_number AS "rowNumber",
+                         ROW_NUMBER() OVER (PARTITION BY lower(immutable_unaccent(${columnExpr("name")})) ORDER BY f.original_name, r.row_number) AS n
+                  FROM rows r
+                  JOIN files f ON f.id = r.file_id
+                  ${where}
+                  AND lower(immutable_unaccent(${columnExpr("name")})) = ANY(${keys}::text[])
+                ) listed
+                WHERE n <= 25
+              `;
+        const byKey = new Map<string, SearchGroup["properties"]>();
+        for (const property of properties) {
+          const list = byKey.get(property.key) ?? [];
+          list.push({
+            id: property.id,
+            area: property.area,
+            project: property.project,
+            unit: property.unit,
+            plot: property.plot,
+            folder: property.folder,
+            fileName: property.fileName,
+            rowNumber: property.rowNumber,
+          });
+          byKey.set(property.key, list);
+        }
+        return grouped.map((group) => ({
+          key: group.key,
+          label: group.label,
+          records: Number(group.records),
+          files: Number(group.files),
+          areas: Number(group.areas),
+          buildings: Number(group.buildings),
+          properties: byKey.get(group.key) ?? [],
+        }));
+      },
+      { maxWait: 5000, timeout: 12000 },
+    );
+  } catch {
+    return [];
+  }
 }
