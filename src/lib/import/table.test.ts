@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeHeader } from "@/lib/columns/headers";
 import { cellToText } from "@/lib/import/cells";
 import { areaFromFileName, duplicateTarget, sheetsToImport, shouldSkipFileName } from "@/lib/import/names";
-import { findHeaderIndex, masterKeyForHeader, parseGrid } from "@/lib/import/table";
+import { addQuality, emptyQuality, findHeaderIndex, masterKeyForHeader, parseGrid, qualityLine } from "@/lib/import/table";
 import { normalizePhoneKeys, phoneQueryKeys } from "@/lib/phone";
 
 describe("header normalization", () => {
@@ -33,6 +33,11 @@ describe("alias mapping", () => {
     expect(masterKeyForHeader("ProcedureValue")).toBe("price");
     expect(masterKeyForHeader("PropertyTypeEn")).toBe("property_type");
     expect(masterKeyForHeader("Balcony Area")).toBe("balcony_area");
+    expect(masterKeyForHeader("Sub Community")).toBe("sub_community");
+    expect(masterKeyForHeader("Plot Area")).toBe("plot_area");
+    expect(masterKeyForHeader("GFA")).toBe("gfa");
+    expect(masterKeyForHeader("Purchase Date")).toBe("purchase_date");
+    expect(masterKeyForHeader("Lawful Nationality")).toBe("nationality");
   });
 });
 
@@ -107,6 +112,13 @@ describe("parsed rows", () => {
     expect(parsed.rows[0]?.data.name).toBe("Ahmed");
     expect(parsed.rows[0]?.phoneKeys).toEqual(["501112233", "559998877"]);
     expect(parsed.rows[0]?.rowNumber).toBe(4);
+  });
+
+  it("summarizes missing owner, phone, and property without dropping the row", () => {
+    const tally = emptyQuality();
+    addQuality(tally, { data: { email: "owner@example.com" } });
+    addQuality(tally, { data: { name: "Ahmed", mobile: "123", project: "Tower" } });
+    expect(qualityLine(tally)).toBe("Quality: 1 missing owner name, 1 incomplete phone, 1 missing property. Source rows were kept.");
   });
 
   it("keeps every worksheet when none are selected and skips the rest when some are", () => {

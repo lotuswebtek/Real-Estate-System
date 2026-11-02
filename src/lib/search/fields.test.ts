@@ -23,6 +23,13 @@ describe("standardized search fields", () => {
     expect(storedKeys("name")).not.toContain("project");
     expect(storedKeys("project")).not.toContain("area");
     expect(storedKeys("unit")).not.toContain("plot");
+    expect(storedKeys("area")).not.toContain("sub_community");
+    expect(storedKeys("size")).not.toContain("plot_area");
+    expect(storedKeys("size")).not.toContain("gfa");
+    expect(storedKeys("subCommunity")).toContain("sub_community");
+    expect(storedKeys("plotArea")).toContain("plot_area");
+    expect(storedKeys("gfa")).toContain("gfa");
+    expect(storedKeys("purchaseDate")).toContain("purchase_date");
     expect(FIELD_CATALOG.plot.keys).toContain("plot_number");
   });
 

@@ -29,6 +29,32 @@ export type ParsedGrid = {
   rows: ParsedRow[];
 };
 
+export type QualityTally = { missingName: number; badPhone: number; incomplete: number };
+
+export function emptyQuality(): QualityTally {
+  return { missingName: 0, badPhone: 0, incomplete: 0 };
+}
+
+export function addQuality(tally: QualityTally, row: Pick<ParsedRow, "data">) {
+  const name = row.data.name || row.data.owner_name || "";
+  if (!name.trim()) tally.missingName += 1;
+  const phone = [row.data.mobile, row.data.mobile_2].filter(Boolean).join("");
+  const digits = phone.replace(/\D/g, "");
+  if (phone && (digits.length < 7 || digits.length > 15)) tally.badPhone += 1;
+  if (!row.data.project && !row.data.building && !row.data.unit && !row.data.plot && !row.data.plot_no && !row.data.plot_number) {
+    tally.incomplete += 1;
+  }
+}
+
+export function qualityLine(tally: QualityTally): string | null {
+  const parts: string[] = [];
+  if (tally.missingName > 0) parts.push(`${tally.missingName} missing owner name`);
+  if (tally.badPhone > 0) parts.push(`${tally.badPhone} incomplete phone`);
+  if (tally.incomplete > 0) parts.push(`${tally.incomplete} missing property`);
+  if (parts.length === 0) return null;
+  return `Quality: ${parts.join(", ")}. Source rows were kept.`;
+}
+
 export function masterKeyForHeader(raw: string): string {
   const normalized = normalizeHeader(raw);
   for (const column of MASTER_COLUMNS) {

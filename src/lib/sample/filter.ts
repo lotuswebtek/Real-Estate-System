@@ -81,6 +81,11 @@ function fieldValues(lead: SampleLead, column: Exclude<SearchColumn, "all">): st
     case "role":
     case "emirate":
     case "date":
+    case "purchaseDate":
+    case "subCommunity":
+    case "plotArea":
+    case "gfa":
+    case "source":
     case "idPassport":
       return [];
   }

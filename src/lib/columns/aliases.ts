@@ -67,12 +67,17 @@ export const MASTER_COLUMNS: MasterColumn[] = [
   {
     displayName: "Nationality",
     normalizedKey: "nationality",
-    aliases: ["nationality", "country", "nation", "country name", "country name en"],
+    aliases: ["nationality", "country", "nation", "country name", "country name en", "lawful nationality"],
   },
   {
     displayName: "Community",
     normalizedKey: "area",
-    aliases: ["area", "community", "location", "district", "region", "city", "sub community", "area name", "area name en", "master location"],
+    aliases: ["area", "community", "location", "district", "region", "city", "area name", "area name en", "master location"],
+  },
+  {
+    displayName: "Sub-community",
+    normalizedKey: "sub_community",
+    aliases: ["sub community", "sub-community", "subcommunity"],
   },
   {
     displayName: "Building Name",
@@ -112,7 +117,17 @@ export const MASTER_COLUMNS: MasterColumn[] = [
   {
     displayName: "Size",
     normalizedKey: "size",
-    aliases: ["size", "area sqft", "sqft", "area (sqft)", "size sqft", "plot area", "plot size", "bua", "actual area", "actual size", "built up"],
+    aliases: ["size", "area sqft", "sqft", "area (sqft)", "size sqft", "actual area", "actual size"],
+  },
+  {
+    displayName: "Plot Area",
+    normalizedKey: "plot_area",
+    aliases: ["plot area", "plot size"],
+  },
+  {
+    displayName: "GFA",
+    normalizedKey: "gfa",
+    aliases: ["gfa", "bua", "built up", "built up area", "built-up area"],
   },
   {
     displayName: "Price",
@@ -123,6 +138,11 @@ export const MASTER_COLUMNS: MasterColumn[] = [
     displayName: "Date",
     normalizedKey: "date",
     aliases: ["date", "registration date", "transaction date", "procedure date"],
+  },
+  {
+    displayName: "Purchase Date",
+    normalizedKey: "purchase_date",
+    aliases: ["purchase date", "sale date"],
   },
   {
     displayName: "ID / Passport",

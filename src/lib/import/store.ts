@@ -6,6 +6,7 @@ import type { PrismaClient } from "@prisma/client";
 import { normalizeHeader } from "@/lib/columns/headers";
 import { readWorkbookBuffer } from "@/lib/import/cells";
 import { duplicateTarget, sheetsToImport } from "@/lib/import/names";
+import { addQuality, emptyQuality, qualityLine, type QualityTally } from "@/lib/import/table";
 import { readWorkbookSheets } from "@/lib/import/stream-xlsx";
 import { extendHeaders, parseGrid, parsedRowFrom, planHeaders, planReady, type HeaderPlan, type ParsedHeader, type ParsedRow } from "@/lib/import/table";
 import { prisma } from "@/lib/db/prisma";
@@ -63,8 +64,9 @@ async function rememberColumns(db: PrismaClient, headers: { raw: string; key: st
   }
 }
 
-async function flushRows(db: PrismaClient, fileId: string, sheetId: string, batch: ParsedRow[]) {
+async function flushRows(db: PrismaClient, fileId: string, sheetId: string, batch: ParsedRow[], tally: QualityTally) {
   if (batch.length === 0) return;
+  for (const row of batch) addQuality(tally, row);
   await db.row.createMany({
     data: batch.map((row) => ({
       fileId,
@@ -88,6 +90,7 @@ async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath:
   let rowCount = 0;
   let flushes = 0;
   const importedNames: string[] = [];
+  const tally = emptyQuality();
   const allow = selected.length > 0 ? new Set(selected) : null;
   await readWorkbookSheets(sourcePath, async ({ name, rows }) => {
     importedNames.push(name);
@@ -123,7 +126,7 @@ async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath:
       rowCount += 1;
       if (sheetRows % 25000 === 0) console.log(`  ${name}: ${sheetRows} rows`);
       if (batch.length >= BATCH) {
-        await flushRows(db, fileId, sheetId, batch);
+        await flushRows(db, fileId, sheetId, batch, tally);
         flushes += 1;
         if (flushes % 5 === 0) await noteProgress(db, fileId, rowCount, sheetCount);
         if (sheetRows % 25000 === 0) {
@@ -144,13 +147,14 @@ async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath:
       if (ready) await startSheet(ready);
     }
     if (!started) await startSheet(planHeaders(pending));
-    await flushRows(db, fileId, sheetId, batch);
+    await flushRows(db, fileId, sheetId, batch, tally);
     if (sheetId) await db.sheet.update({ where: { id: sheetId }, data: { rowCount: sheetRows } });
     await noteProgress(db, fileId, rowCount, sheetCount);
   }, allow ? (name) => allow.has(name) : undefined);
   const missing = selected.filter((name) => !importedNames.includes(name));
   if (sheetCount === 0) throw new Error(selected.length > 0 ? "None of the selected worksheets were found." : "This workbook has no readable sheets.");
-  return { sheetCount, rowCount, failures: missing.map((name) => `${name}: worksheet was not in the file`) };
+  const quality = qualityLine(tally);
+  return { sheetCount, rowCount, failures: [...missing.map((name) => `${name}: worksheet was not in the file`), ...(quality ? [quality] : [])] };
 }
 
 export async function importFileById(fileId: string, db: PrismaClient = prisma, options?: { force?: boolean }): Promise<void> {
@@ -234,6 +238,7 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma, 
     const grids = readWorkbookBuffer(buffer);
     const chosen = sheetsToImport(grids.map((sheet) => sheet.name), file.selectedSheets);
     const failures = chosen.missing.map((name) => `${name}: worksheet was not in the file`);
+    const tally = emptyQuality();
     if (file.selectedSheets.length > 0 && chosen.included.length === 0) {
       throw new Error("None of the selected worksheets were found.");
     }
@@ -270,6 +275,7 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma, 
             })),
           });
         }
+        for (const row of parsed.rows) addQuality(tally, row);
         rowCount += parsed.rows.length;
         importedSheets += 1;
         await noteProgress(db, fileId, rowCount, importedSheets);
@@ -290,7 +296,7 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma, 
         storagePath,
         status: importedSheets === 0 && failures.length > 0 ? "failed" : "done",
         duplicateOfFileId: null,
-        errorMessage: failures.length > 0 ? failures.join("\n").slice(0, 1000) : null,
+        errorMessage: [...failures, qualityLine(tally)].filter(Boolean).join("\n").slice(0, 1000) || null,
         sheetCount: importedSheets,
         rowCount,
         importedAt: new Date(),

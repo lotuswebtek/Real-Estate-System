@@ -69,8 +69,13 @@ export function DetailPanel({
       ) : null}
       <div className="border-b border-border px-5 pt-5 pr-12 pb-4">
         <p className="text-[12px] text-muted-foreground">Lead</p>
-        <h2 className="mt-1 text-[20px] leading-snug font-medium tracking-tight">
+        <h2 className="mt-1 flex items-start gap-1 text-[20px] leading-snug font-medium tracking-tight">
           <Highlight text={lead.name} query={query} />
+          {lead.name ? (
+            <Button type="button" variant="ghost" size="icon" aria-label="Copy owner name" onClick={() => void copyValue(lead.name)}>
+              <Copy />
+            </Button>
+          ) : null}
         </h2>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className={cn("rounded-md px-1.5 py-0.5 text-[12px] font-medium", areaClass(lead.area))}>{lead.area}</span>
@@ -113,7 +118,7 @@ export function DetailPanel({
                     </Button>
                   ) : null}
                 </div>
-                {formatted !== phone.trim() ? <p className="mt-1 text-[12px] text-muted-foreground">Stored in the file: {phone}. The formatted number is for calling.</p> : null}
+                {formatted !== phone.trim() ? <p className="mt-1 text-[12px] text-muted-foreground">Raw file value: {phone}. The formatted number is normalized for calling.</p> : null}
               </Field>
             );
           })}
@@ -134,10 +139,24 @@ export function DetailPanel({
           <Field label="Community">{lead.area || "—"}</Field>
           <Field label="Building Name">{lead.project || "—"}</Field>
           <Field label="Plot Number">
-            <span className="font-mono tabular-nums">{lead.plot || "—"}</span>
+            <span className="inline-flex items-center gap-1 font-mono tabular-nums">
+              {lead.plot || "—"}
+              {lead.plot ? (
+                <Button type="button" variant="ghost" size="icon" aria-label="Copy plot number" onClick={() => void copyValue(lead.plot)}>
+                  <Copy />
+                </Button>
+              ) : null}
+            </span>
           </Field>
           <Field label="Unit Number">
-            <span className="font-mono tabular-nums">{lead.unit || "—"}</span>
+            <span className="inline-flex items-center gap-1 font-mono tabular-nums">
+              {lead.unit || "—"}
+              {lead.unit ? (
+                <Button type="button" variant="ghost" size="icon" aria-label="Copy unit number" onClick={() => void copyValue(lead.unit)}>
+                  <Copy />
+                </Button>
+              ) : null}
+            </span>
           </Field>
           <Field label="Type">{lead.propertyType || "—"}</Field>
           <Field label="Size">{lead.size || "—"}</Field>

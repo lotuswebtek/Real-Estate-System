@@ -13,7 +13,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { readClauses } from "@/lib/search/clauses";
 import { EMPTY_SAVED_SEARCHES, readSavedSearches, subscribeLibrary, writeSavedSearches } from "@/lib/client/library";
-import type { SearchClause, SearchHit, SearchResponse } from "@/lib/search/types";
+import type { SearchClause, SearchColumn, SearchHit, SearchResponse } from "@/lib/search/types";
 import { SEARCH_COLUMNS } from "@/lib/search/types";
 import type { MatchMode } from "@/lib/sample/filter";
 
@@ -292,7 +292,7 @@ export function SearchExperience() {
             )}
             {focused && draft.trim().length === 0 && (recent.length > 0 || saved.length > 0) ? (
               <div className="absolute z-20 mt-2 w-full rounded-lg border border-border bg-popover p-1">
-                {saved.length > 0 ? <p className="px-2 py-1.5 text-[12px] text-muted-foreground">Saved searches</p> : null}
+                {saved.length > 0 ? <p className="px-2 py-1.5 text-[12px] text-muted-foreground">Saved filters</p> : null}
                 {saved.map((item) => (
                   <div key={item.name} className="flex items-center">
                     <button
@@ -300,9 +300,26 @@ export function SearchExperience() {
                       className="flex min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
+                        const params = new URLSearchParams(item.filters ?? "");
+                        const col = params.get("col");
+                        const mode = params.get("mode");
+                        const date = params.get("date");
+                        const list = (key: string) => (params.get(key) ?? "").split("|").filter(Boolean);
                         setDraft(item.query);
                         setRuleDraft(readClauses(item.rules));
-                        void setState({ q: item.query, rules: item.rules, page: 1 });
+                        void setState({
+                          q: item.query,
+                          rules: item.rules,
+                          page: 1,
+                          col: col && (SEARCH_COLUMNS as readonly string[]).includes(col) ? (col as SearchColumn) : "all",
+                          mode: mode === "exact" || mode === "starts" || mode === "ends" ? mode : "contains",
+                          area: list("area"),
+                          folder: list("folder"),
+                          nationality: list("nationality"),
+                          type: list("type"),
+                          file: list("file"),
+                          date: date === "7" || date === "30" ? date : "all",
+                        });
                         setFocused(false);
                       }}
                     >
@@ -449,7 +466,10 @@ export function SearchExperience() {
               event.preventDefault();
               const name = saveName.trim();
               if (!name) return;
-              const next = [{ name, query: state.q, rules: state.rules }, ...readSavedSearches().filter((item) => item.name !== name)].slice(0, 20);
+              const filters = new URLSearchParams(searchParams);
+              filters.delete("page");
+              filters.delete("row");
+              const next = [{ name, query: state.q, rules: state.rules, filters: filters.toString() }, ...readSavedSearches().filter((item) => item.name !== name)].slice(0, 20);
               writeSavedSearches(next);
               setSaveName("");
             }}
@@ -457,12 +477,12 @@ export function SearchExperience() {
             <input
               value={saveName}
               onChange={(event) => setSaveName(event.target.value)}
-              placeholder="Name this search"
+              placeholder="Name these filters"
               aria-label="Name this search"
               className="h-8 w-44 rounded-lg border border-border bg-card px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             />
             <Button type="submit" variant="outline" size="sm" disabled={saveName.trim().length === 0}>
-              Save search
+              Save filters
             </Button>
           </form>
           <FilterBar

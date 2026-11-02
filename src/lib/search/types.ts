@@ -18,6 +18,11 @@ export const SEARCH_COLUMNS = [
   "size",
   "price",
   "date",
+  "purchaseDate",
+  "subCommunity",
+  "plotArea",
+  "gfa",
+  "source",
   "idPassport",
 ] as const;
 

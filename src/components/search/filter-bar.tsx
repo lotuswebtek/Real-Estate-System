@@ -224,7 +224,7 @@ export function FilterBar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className={chipClass(date !== "all")}>
-              {dateLabel}
+              {date === "all" ? "Upload date" : dateLabel}
               <ChevronDown className="size-3.5 opacity-60" />
             </button>
           </DropdownMenuTrigger>
@@ -252,7 +252,7 @@ export function FilterBar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {activeChips.length > 0 || date !== "all" ? (
+      {activeChips.length > 0 || date !== "all" || rules.some((rule) => rule.query.trim()) ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {activeChips.map((chip) => (
             <button

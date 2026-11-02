@@ -40,6 +40,7 @@ function likeClause(column: SearchColumn, pattern: string, raw: string, mode: "c
 }
 
 function columnExpr(column: Exclude<SearchColumn, "all">): Prisma.Sql {
+  if (column === "source") return Prisma.sql`COALESCE((SELECT src.name FROM sources src WHERE src.id = f.source_id), '')`;
   const parts = storedKeys(column).map((key) => Prisma.sql`NULLIF(r.data->>${key}, '')`);
   if (column === "area") return Prisma.sql`COALESCE(${Prisma.join(parts, ", ")}, NULLIF(f.area, ''), '')`;
   return Prisma.sql`COALESCE(${Prisma.join(parts, ", ")}, '')`;
@@ -207,7 +208,7 @@ function qualityFlags(data: Record<string, string>, name: string): string[] {
   const phone = [data.mobile, data.mobile_2].filter(Boolean).join(" ");
   const digits = phone.replace(/\D/g, "");
   if (phone.trim() && (digits.length < 7 || digits.length > 15)) flags.push("Phone number looks incomplete");
-  if (!data.project && !data.unit && !data.plot && !data.plot_no && !data.plot_number && !data.parcel) {
+  if (!data.project && !data.building && !data.unit && !data.plot && !data.plot_no && !data.plot_number && !data.parcel) {
     flags.push("No building, unit, or plot");
   }
   return flags;
@@ -262,7 +263,7 @@ function toHit(row: RawHit, seen: number): SearchHit {
     price: firstStored(data, "price"),
     importedAt: row.importedAt ? row.importedAt.toISOString() : "",
     seen,
-    flags: qualityFlags(data, leadName(data)),
+    flags: [...qualityFlags(data, leadName(data)), ...(seen > 1 ? ["Possible duplicate contact. Shared phone or email is not verified ownership."] : [])],
     extra,
   };
 }

@@ -37,7 +37,7 @@ export function DashboardView() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-8">
-        <PageHeader title="Dashboard" description="Source rows are the totals stored on each file. They are not a count of unique owners or properties." />
+        <PageHeader title="Dashboard" description="Source rows are every imported line. They are not unique owners or unique properties. A shared phone is only a possible duplicate, and conflicting values stay on their own source rows." />
         {stats.isError ? <p className="text-[13px] text-muted-foreground">Totals could not load.</p> : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {CARDS.map((card) => (

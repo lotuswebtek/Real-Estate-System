@@ -1,4 +1,4 @@
-export type SavedSearch = { name: string; rules: string; query: string };
+export type SavedSearch = { name: string; rules: string; query: string; filters?: string };
 
 export type Bookmark = { id: string; name: string; detail: string };
 
@@ -28,7 +28,13 @@ function isSavedSearch(item: unknown): item is SavedSearch {
 function sameSaved(left: SavedSearch[], right: SavedSearch[]) {
   return (
     left.length === right.length &&
-    left.every((item, index) => item.name === right[index]?.name && item.query === right[index]?.query && item.rules === right[index]?.rules)
+    left.every(
+      (item, index) =>
+        item.name === right[index]?.name &&
+        item.query === right[index]?.query &&
+        item.rules === right[index]?.rules &&
+        (item.filters ?? "") === (right[index]?.filters ?? ""),
+    )
   );
 }
 

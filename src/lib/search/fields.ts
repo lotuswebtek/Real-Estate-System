@@ -34,7 +34,7 @@ export const FIELD_CATALOG: Record<SearchColumn, FieldDef> = {
   },
   nationality: {
     label: "Nationality",
-    hints: ["nationality", "country"],
+    hints: ["nationality", "country", "lawful nationality"],
     keys: ["nationality"],
   },
   project: {
@@ -55,7 +55,12 @@ export const FIELD_CATALOG: Record<SearchColumn, FieldDef> = {
   area: {
     label: "Community",
     hints: ["community", "area", "location", "district"],
-    keys: ["area", "community", "location", "district", "sub_community", "area_name", "master_location"],
+    keys: ["area", "community", "location", "district", "area_name", "master_location"],
+  },
+  subCommunity: {
+    label: "Sub-community",
+    hints: ["sub-community", "sub community", "subcommunity"],
+    keys: ["sub_community", "subcommunity"],
   },
   propertyType: {
     label: "Property Type",
@@ -82,6 +87,16 @@ export const FIELD_CATALOG: Record<SearchColumn, FieldDef> = {
     hints: ["size", "sqft", "area sqft"],
     keys: ["size"],
   },
+  plotArea: {
+    label: "Plot Area",
+    hints: ["plot area", "plot size"],
+    keys: ["plot_area", "plot_size"],
+  },
+  gfa: {
+    label: "GFA",
+    hints: ["gfa", "bua", "built up", "built-up area"],
+    keys: ["gfa", "bua", "built_up", "built_up_area"],
+  },
   price: {
     label: "Price",
     hints: ["price", "amount", "value"],
@@ -91,6 +106,16 @@ export const FIELD_CATALOG: Record<SearchColumn, FieldDef> = {
     label: "Date",
     hints: ["date", "registration date"],
     keys: ["date"],
+  },
+  purchaseDate: {
+    label: "Purchase Date",
+    hints: ["purchase date", "sale date", "bought"],
+    keys: ["purchase_date", "sale_date"],
+  },
+  source: {
+    label: "Source",
+    hints: ["source", "upload source"],
+    keys: [],
   },
   idPassport: {
     label: "ID / Passport",
