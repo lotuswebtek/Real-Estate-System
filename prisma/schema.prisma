@@ -123,6 +123,7 @@ model File {
   sheetCount        Int        @default(0) @map("sheet_count")
   rowCount          Int        @default(0) @map("row_count")
   storagePath       String?    @map("storage_path")
+  selectedSheets    String[]   @default([]) @map("selected_sheets")
   importedAt        DateTime?  @map("imported_at")
   createdAt         DateTime   @default(now()) @map("created_at")
   updatedAt         DateTime   @updatedAt @map("updated_at")

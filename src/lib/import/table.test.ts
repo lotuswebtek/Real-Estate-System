@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeHeader } from "@/lib/columns/headers";
 import { cellToText } from "@/lib/import/cells";
-import { areaFromFileName, duplicateTarget, shouldSkipFileName } from "@/lib/import/names";
+import { areaFromFileName, duplicateTarget, sheetsToImport, shouldSkipFileName } from "@/lib/import/names";
 import { findHeaderIndex, masterKeyForHeader, parseGrid } from "@/lib/import/table";
 import { normalizePhoneKeys, phoneQueryKeys } from "@/lib/phone";
 
@@ -107,6 +107,14 @@ describe("parsed rows", () => {
     expect(parsed.rows[0]?.data.name).toBe("Ahmed");
     expect(parsed.rows[0]?.phoneKeys).toEqual(["501112233", "559998877"]);
     expect(parsed.rows[0]?.rowNumber).toBe(4);
+  });
+
+  it("keeps every worksheet when none are selected and skips the rest when some are", () => {
+    expect(sheetsToImport(["Owners", "Units"], [])).toEqual({ included: ["Owners", "Units"], missing: [] });
+    expect(sheetsToImport(["Owners", "Units"], ["Units", "Missing"])).toEqual({
+      included: ["Units"],
+      missing: ["Missing"],
+    });
   });
 
   it("marks a later copy as a duplicate when the content hash matches", () => {

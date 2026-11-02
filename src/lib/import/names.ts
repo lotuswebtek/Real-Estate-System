@@ -32,6 +32,15 @@ export function areaFromFileName(fileName: string): string {
   return base.replace(/\s*\(\d+\)\s*$/g, "").replace(/\s+/g, " ").trim();
 }
 
+export function sheetsToImport(names: string[], selected: string[]): { included: string[]; missing: string[] } {
+  if (selected.length === 0) return { included: names, missing: [] };
+  const allow = new Set(selected);
+  return {
+    included: names.filter((name) => allow.has(name)),
+    missing: selected.filter((name) => !names.includes(name)),
+  };
+}
+
 export function folderLabel(relativeDir: string): string {
   const cleaned = relativeDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   return cleaned || "(main folder)";
@@ -43,7 +52,7 @@ export function duplicateTarget(
   selfId: string,
 ): string | null {
   const match = files.find(
-    (file) => file.id !== selfId && file.hash === hash && (file.status === "done" || file.status === "duplicate"),
+    (file) => file.id !== selfId && file.hash === hash && file.status === "done",
   );
   return match?.id ?? null;
 }

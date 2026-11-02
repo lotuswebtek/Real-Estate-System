@@ -14,12 +14,14 @@ export async function GET() {
       status: true,
       errorMessage: true,
       importedAt: true,
+      updatedAt: true,
     },
   });
   return NextResponse.json({
     files: files.map((file) => ({
       ...file,
       importedAt: file.importedAt?.toISOString() ?? null,
+      updatedAt: file.updatedAt.toISOString(),
     })),
   });
 }

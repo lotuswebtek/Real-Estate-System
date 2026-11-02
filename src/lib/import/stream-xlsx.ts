@@ -254,10 +254,12 @@ async function* rowsFromEntry(entry: ZipEntry, sharedStrings: string[]): AsyncGe
 export async function readWorkbookSheets(
   filePath: string,
   onSheet: (sheet: { name: string; rows: AsyncIterable<GridRow> }) => Promise<void>,
+  include?: (name: string) => boolean,
 ): Promise<number> {
   const meta = await workbookMeta(filePath);
   const zip = openZip(filePath);
   let count = 0;
+  let seen = 0;
   try {
     for await (const entry of zip.entries) {
       const entryPath = entry.path.replace(/\\/g, "/");
@@ -265,8 +267,13 @@ export async function readWorkbookSheets(
         await discard(entry);
         continue;
       }
+      seen += 1;
+      const name = meta.names.get(entryPath.toLowerCase()) || `Sheet ${seen}`;
+      if (include && !include(name)) {
+        await discard(entry);
+        continue;
+      }
       count += 1;
-      const name = meta.names.get(entryPath.toLowerCase()) || `Sheet ${count}`;
       await onSheet({ name, rows: rowsFromEntry(entry, meta.sharedStrings) });
     }
   } finally {

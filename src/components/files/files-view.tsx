@@ -68,7 +68,8 @@ export function FilesView() {
   async function remove(id: string) {
     const response = await fetch(`/api/files/${id}`, { method: "DELETE" });
     if (!response.ok) {
-      toast("The file could not be deleted. Try again.");
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      toast(body.error || "The file could not be deleted. Try again.");
       return;
     }
     setConfirming(null);
@@ -78,7 +79,8 @@ export function FilesView() {
   async function reimport(id: string) {
     const response = await fetch(`/api/files/${id}/reimport`, { method: "POST" });
     if (!response.ok) {
-      toast("That file could not be queued. Try again.");
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      toast(body.error || "That file could not be queued. Try again.");
       return;
     }
     toast("Re-import queued");
