@@ -11,7 +11,7 @@ function csvCell(value: string): string {
 }
 
 function toCsv(rows: SearchHit[], context: string): string {
-  const header = ["Name", "Mobile", "Email", "Nationality", "Area", "Project", "Unit", "Property type", "Folder", "File", "Sheet", "Row", "Size", "Price", "Flags", "Search context"];
+  const header = ["Owner Name", "Mobile", "Email", "Nationality", "Community", "Building Name", "Plot Number", "Unit Number", "Property type", "Folder", "File", "Sheet", "Row", "Size", "Price", "Flags", "Search context"];
   const lines = rows.map((lead) =>
     [
       lead.name,
@@ -20,6 +20,7 @@ function toCsv(rows: SearchHit[], context: string): string {
       lead.nationality,
       lead.area,
       lead.project,
+      lead.plot,
       lead.unit,
       lead.propertyType,
       lead.folder,

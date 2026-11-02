@@ -131,8 +131,12 @@ export function DetailPanel({
               "—"
             )}
           </Field>
-          <Field label="Project">{lead.project || "—"}</Field>
-          <Field label="Unit">
+          <Field label="Community">{lead.area || "—"}</Field>
+          <Field label="Building Name">{lead.project || "—"}</Field>
+          <Field label="Plot Number">
+            <span className="font-mono tabular-nums">{lead.plot || "—"}</span>
+          </Field>
+          <Field label="Unit Number">
             <span className="font-mono tabular-nums">{lead.unit || "—"}</span>
           </Field>
           <Field label="Type">{lead.propertyType || "—"}</Field>

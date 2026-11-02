@@ -6,7 +6,7 @@ export type MasterColumn = {
 
 export const MASTER_COLUMNS: MasterColumn[] = [
   {
-    displayName: "Name",
+    displayName: "Owner Name",
     normalizedKey: "name",
     aliases: [
       "name",
@@ -70,12 +70,12 @@ export const MASTER_COLUMNS: MasterColumn[] = [
     aliases: ["nationality", "country", "nation", "country name", "country name en"],
   },
   {
-    displayName: "Area / Community",
+    displayName: "Community",
     normalizedKey: "area",
     aliases: ["area", "community", "location", "district", "region", "city", "sub community", "area name", "area name en", "master location"],
   },
   {
-    displayName: "Project / Building",
+    displayName: "Building Name",
     normalizedKey: "project",
     aliases: ["project", "project name", "building", "building name", "building name en", "building number", "tower", "master project"],
   },

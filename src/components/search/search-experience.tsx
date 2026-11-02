@@ -75,7 +75,7 @@ function csvCell(value: string): string {
 }
 
 function downloadCsv(rows: SearchHit[], context: string) {
-  const header = ["Name", "Mobile", "Email", "Nationality", "Area", "Project", "Unit", "Property type", "Folder", "File", "Sheet", "Row", "Size", "Price", "Search context"];
+  const header = ["Owner Name", "Mobile", "Email", "Nationality", "Community", "Building Name", "Plot Number", "Unit Number", "Property type", "Folder", "File", "Sheet", "Row", "Size", "Price", "Search context"];
   const lines = rows.map((lead) =>
     [
       lead.name,
@@ -84,6 +84,7 @@ function downloadCsv(rows: SearchHit[], context: string) {
       lead.nationality,
       lead.area,
       lead.project,
+      lead.plot,
       lead.unit,
       lead.propertyType,
       lead.folder,

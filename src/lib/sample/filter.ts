@@ -1,6 +1,7 @@
 import { digitsOnly, formatPhone, isPhoneQuery, normalizePhoneKeys, phoneKeyFromDigits, splitPhoneValues } from "@/lib/phone";
 import { SAMPLE_LEADS, type SampleLead } from "./leads";
 
+import { fieldLabel } from "@/lib/search/fields";
 import type { SearchColumn } from "@/lib/search/types";
 
 export type { SearchColumn } from "@/lib/search/types";
@@ -31,23 +32,8 @@ export const EMPTY_FILTERS: SampleFilters = {
   date: "all",
 };
 
-const COLUMN_LABELS: Record<SearchColumn, string> = {
-  all: "All columns",
-  name: "Name",
-  mobile: "Mobile",
-  email: "Email",
-  nationality: "Nationality",
-  project: "Project",
-  unit: "Unit",
-  plot: "Plot",
-  area: "Area",
-  propertyType: "Property type",
-  bedrooms: "Bedrooms",
-  role: "Role",
-};
-
 export function columnLabel(column: SearchColumn): string {
-  return COLUMN_LABELS[column];
+  return fieldLabel(column);
 }
 
 function fileKey(lead: SampleLead): string {
@@ -71,6 +57,8 @@ function fieldValues(lead: SampleLead, column: Exclude<SearchColumn, "all">): st
       return [lead.name];
     case "mobile":
       return mobileFieldValues(lead);
+    case "mobile2":
+      return [];
     case "email":
       return [lead.email];
     case "nationality":
@@ -80,14 +68,20 @@ function fieldValues(lead: SampleLead, column: Exclude<SearchColumn, "all">): st
     case "unit":
       return [lead.unit];
     case "plot":
-      return [lead.unit];
+      return [];
     case "area":
       return [lead.area];
     case "propertyType":
       return [lead.propertyType];
+    case "size":
+      return [lead.size];
+    case "price":
+      return [lead.price];
     case "bedrooms":
-      return [];
     case "role":
+    case "emirate":
+    case "date":
+    case "idPassport":
       return [];
   }
 }

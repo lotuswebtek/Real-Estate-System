@@ -26,7 +26,7 @@ import type { SearchHit } from "@/lib/search/types";
 import { formatPhone, isPhoneQuery, normalizePhoneKeys, phoneKeyFromDigits, digitsOnly, splitPhoneValues } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 
-const FLEX_IDS = ["email", "nationality", "area", "project", "unit", "propertyType", "source"] as const;
+const FLEX_IDS = ["email", "nationality", "area", "project", "plot", "unit", "propertyType", "source"] as const;
 const DEFAULT_ORDER = ["name", "mobile", ...FLEX_IDS];
 const WIDTHS: Record<string, number> = {
   name: 320,
@@ -35,6 +35,7 @@ const WIDTHS: Record<string, number> = {
   nationality: 124,
   area: 156,
   project: 180,
+  plot: 120,
   unit: 112,
   propertyType: 132,
   source: 320,
@@ -44,21 +45,22 @@ const GROUP_OPTIONS = [
   { id: "", label: "No grouping" },
   { id: "name", label: "Owner" },
   { id: "mobile", label: "Phone" },
-  { id: "project", label: "Building" },
-  { id: "area", label: "Area" },
+  { id: "project", label: "Building Name" },
+  { id: "area", label: "Community" },
   { id: "unit", label: "Plot / unit" },
 ] as const;
 
 type GroupBy = (typeof GROUP_OPTIONS)[number]["id"];
 
 const LABELS: Record<string, string> = {
-  name: "Name",
+  name: "Owner Name",
   mobile: "Mobile",
   email: "Email",
   nationality: "Nationality",
-  area: "Area",
-  project: "Project",
-  unit: "Unit",
+  area: "Community",
+  project: "Building Name",
+  plot: "Plot Number",
+  unit: "Unit Number",
   propertyType: "Type",
   source: "Source",
 };
@@ -87,7 +89,7 @@ function groupLabel(lead: SearchHit, groupBy: Exclude<GroupBy, "">): string {
   }
   if (groupBy === "project") return lead.project.trim() || "No building";
   if (groupBy === "area") return lead.area.trim() || "No area";
-  return lead.unit.trim() || "No plot or unit";
+  return lead.plot.trim() || lead.unit.trim() || "No plot or unit";
 }
 
 function phoneActive(lead: SearchHit, query: string): boolean {
@@ -143,7 +145,7 @@ export function ResultsPanel({
       {
         id: "name",
         accessorKey: "name",
-        header: "Name",
+        header: "Owner Name",
         cell: ({ row }) => {
           const count = seen.get(row.original.id) ?? 1;
           return (
@@ -193,7 +195,7 @@ export function ResultsPanel({
       {
         id: "area",
         accessorKey: "area",
-        header: "Area",
+        header: "Community",
         cell: ({ row }) => (
           <span className={cn("rounded-md px-1.5 py-0.5 text-[12px] font-medium", areaClass(row.original.area))}>
             {row.original.area}
@@ -203,13 +205,19 @@ export function ResultsPanel({
       {
         id: "project",
         accessorKey: "project",
-        header: "Project",
+        header: "Building Name",
         cell: ({ row }) => <Highlight text={row.original.project} query={query} />,
+      },
+      {
+        id: "plot",
+        accessorKey: "plot",
+        header: "Plot Number",
+        cell: ({ row }) => <span className="font-mono tabular-nums">{row.original.plot}</span>,
       },
       {
         id: "unit",
         accessorKey: "unit",
-        header: "Unit",
+        header: "Unit Number",
         cell: ({ row }) => <span className="font-mono tabular-nums">{row.original.unit}</span>,
       },
       {
@@ -482,6 +490,9 @@ export function ResultsPanel({
                     <div className="min-w-0">
                       <p className="truncate text-[16px] font-medium">{lead.name}</p>
                       <p className="mt-1 font-mono text-[13px] tabular-nums">{formatted}</p>
+                      {lead.project || lead.plot || lead.unit ? (
+                        <p className="mt-1 truncate text-[12px] text-muted-foreground">{[lead.project, lead.plot, lead.unit].filter(Boolean).join(" · ")}</p>
+                      ) : null}
                     </div>
                     <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-medium", areaClass(lead.area))}>{lead.area}</span>
                   </div>

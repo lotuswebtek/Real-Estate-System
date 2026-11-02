@@ -1,11 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { digitsOnly, isPhoneQuery, phoneKeyFromDigits } from "@/lib/phone";
+import { FIELD_CATALOG, plotTextVariants, storedKeys } from "@/lib/search/fields";
 import type { SearchClause, SearchColumn, SearchHit, SearchMode, SearchRequest, SearchResponse } from "@/lib/search/types";
 
 const PAGE_LIMIT = 200;
 
-const KNOWN_KEYS = new Set(["name", "mobile", "mobile_2", "email", "nationality", "project", "unit", "property_type", "size", "price"]);
+const KNOWN_KEYS = new Set(Object.values(FIELD_CATALOG).flatMap((field) => field.keys));
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
@@ -27,50 +28,25 @@ function targetExpr(column: SearchColumn): Prisma.Sql {
 function likeClause(column: SearchColumn, pattern: string, raw: string, mode: "contains" | "starts" | "ends"): Prisma.Sql {
   const target = targetExpr(column);
   const text = Prisma.sql`immutable_unaccent(${target}) ILIKE immutable_unaccent(${pattern}) ESCAPE '\\'`;
-  const compact = compactAlnum(raw);
-  if (!isPlotLike(raw) || !compact) return text;
-  const hyphenated = compact.replace(/^([a-z]+)(\d.*)$/i, "$1-$2");
-  const spaced = compact.replace(/^([a-z]+)(\d.*)$/i, "$1 $2");
-  const variants = [compact, hyphenated, spaced].filter((value, index, all) => value.length > 0 && all.indexOf(value) === index);
-  const extra = variants
+  if (column !== "plot" && column !== "all") return text;
+  const extra = plotTextVariants(raw)
     .filter((value) => value.toLowerCase() !== raw.trim().toLowerCase())
     .map((value) => {
       const variantPattern = mode === "starts" ? `${escapeLike(value)}%` : mode === "ends" ? `%${escapeLike(value)}` : `%${escapeLike(value)}%`;
       return Prisma.sql`immutable_unaccent(${target}) ILIKE immutable_unaccent(${variantPattern}) ESCAPE '\\'`;
     });
-  if (extra.length === 0) return text;
+  if (extra.length === 0 || !isPlotLike(raw)) return text;
   return Prisma.sql`(${text} OR ${Prisma.join(extra, " OR ")})`;
 }
 
 function columnExpr(column: Exclude<SearchColumn, "all">): Prisma.Sql {
-  switch (column) {
-    case "name":
-      return Prisma.sql`COALESCE(r.data->>'name', '')`;
-    case "mobile":
-      return Prisma.sql`COALESCE(r.data->>'mobile', '')`;
-    case "email":
-      return Prisma.sql`COALESCE(r.data->>'email', '')`;
-    case "nationality":
-      return Prisma.sql`COALESCE(r.data->>'nationality', '')`;
-    case "project":
-      return Prisma.sql`COALESCE(r.data->>'project', '')`;
-    case "unit":
-      return Prisma.sql`COALESCE(r.data->>'unit', '')`;
-    case "plot":
-      return Prisma.sql`COALESCE(NULLIF(r.data->>'plot', ''), NULLIF(r.data->>'plot_no', ''), NULLIF(r.data->>'plot_number', ''), NULLIF(r.data->>'parcel', ''), NULLIF(r.data->>'unit', ''), '')`;
-    case "area":
-      return Prisma.sql`COALESCE(NULLIF(r.data->>'area', ''), f.area, '')`;
-    case "propertyType":
-      return Prisma.sql`COALESCE(r.data->>'property_type', '')`;
-    case "bedrooms":
-      return Prisma.sql`COALESCE(r.data->>'bedrooms', '')`;
-    case "role":
-      return Prisma.sql`COALESCE(r.data->>'role', '')`;
-  }
+  const parts = storedKeys(column).map((key) => Prisma.sql`NULLIF(r.data->>${key}, '')`);
+  if (column === "area") return Prisma.sql`COALESCE(${Prisma.join(parts, ", ")}, NULLIF(f.area, ''), '')`;
+  return Prisma.sql`COALESCE(${Prisma.join(parts, ", ")}, '')`;
 }
 
 function phoneFilter(trimmed: string, column: SearchColumn): Prisma.Sql | null {
-  if (column !== "all" && column !== "mobile") return null;
+  if (column !== "all" && column !== "mobile" && column !== "mobile2") return null;
   const pieces = trimmed.split(/[\s,;|/]+/).map((part) => part.trim()).filter((part) => part.length > 0);
   if (pieces.length === 0) return null;
   const keys: string[] = [];
@@ -81,7 +57,15 @@ function phoneFilter(trimmed: string, column: SearchColumn): Prisma.Sql | null {
     keys.push(key);
   }
   if (keys.length === 0) return null;
-  return Prisma.sql`r.phone_keys && ${keys}::text[]`;
+  const overlap = Prisma.sql`r.phone_keys && ${keys}::text[]`;
+  if (column === "all") return overlap;
+  const dataKey = column === "mobile" ? "mobile" : "mobile_2";
+  const digits = Prisma.sql`regexp_replace(COALESCE(r.data->>${dataKey}, ''), '\\D', '', 'g')`;
+  const inField = Prisma.sql`(${Prisma.join(
+    keys.map((key) => Prisma.sql`${digits} LIKE ${`%${key}`}`),
+    " OR ",
+  )})`;
+  return Prisma.sql`(${overlap} AND ${inField})`;
 }
 
 function textFilter(query: string, mode: SearchMode, column: SearchColumn): Prisma.Sql | null {
@@ -91,10 +75,16 @@ function textFilter(query: string, mode: SearchMode, column: SearchColumn): Pris
   if (phones) return phones;
   let direct: Prisma.Sql;
   if (mode === "exact") {
-    direct =
-      column === "all"
-        ? Prisma.sql`EXISTS (SELECT 1 FROM jsonb_each_text(r.data) field WHERE immutable_unaccent(field.value) = immutable_unaccent(${trimmed}))`
-        : Prisma.sql`immutable_unaccent(${columnExpr(column)}) = immutable_unaccent(${trimmed})`;
+    if (column === "all") {
+      direct = Prisma.sql`EXISTS (SELECT 1 FROM jsonb_each_text(r.data) field WHERE lower(immutable_unaccent(field.value)) = lower(immutable_unaccent(${trimmed})))`;
+    } else if (column === "plot") {
+      direct = Prisma.sql`(${Prisma.join(
+        plotTextVariants(trimmed).map((variant) => Prisma.sql`lower(immutable_unaccent(${columnExpr(column)})) = lower(immutable_unaccent(${variant}))`),
+        " OR ",
+      )})`;
+    } else {
+      direct = Prisma.sql`lower(immutable_unaccent(${columnExpr(column)})) = lower(immutable_unaccent(${trimmed}))`;
+    }
   } else if (mode === "starts" || mode === "ends") {
     const pattern = mode === "starts" ? `${escapeLike(trimmed)}%` : `%${escapeLike(trimmed)}`;
     direct = likeClause(column, pattern, trimmed, mode);
@@ -203,11 +193,19 @@ function fileLabel(folder: string, fileName: string): string {
   return folder ? `${folder} › ${fileName}` : fileName;
 }
 
+function firstStored(data: Record<string, string>, column: Exclude<SearchColumn, "all">): string {
+  for (const key of storedKeys(column)) {
+    const value = data[key]?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function leadName(data: Record<string, string>): string {
-  if (data.name) return data.name;
+  const stored = firstStored(data, "name");
+  if (stored) return stored;
   const parts = [data.fname, data.mname, data.sname, data.first_name, data.last_name].filter(Boolean);
-  if (parts.length > 0) return parts.join(" ");
-  return data.owner_name || data.full_name || "";
+  return parts.join(" ");
 }
 
 function qualityFlags(data: Record<string, string>, name: string): string[] {
@@ -254,20 +252,21 @@ function toHit(row: RawHit, seen: number): SearchHit {
     id: row.id,
     fileId: row.fileId,
     fileName: row.fileName,
-    area: row.area || data.area || "",
+    area: firstStored(data, "area") || row.area || "",
     folder: row.folder || "",
     sheet: row.sheet,
     rowNumber: row.rowNumber,
     name: leadName(data),
     mobile: mobileRaw,
     mobileRaw,
-    email: data.email || "",
-    nationality: data.nationality || "",
-    project: data.project || "",
-    unit: data.unit || "",
-    propertyType: data.property_type || "",
-    size: data.size || "",
-    price: data.price || "",
+    email: firstStored(data, "email"),
+    nationality: firstStored(data, "nationality"),
+    project: firstStored(data, "project"),
+    unit: firstStored(data, "unit"),
+    plot: firstStored(data, "plot"),
+    propertyType: firstStored(data, "propertyType"),
+    size: firstStored(data, "size"),
+    price: firstStored(data, "price"),
     importedAt: row.importedAt ? row.importedAt.toISOString() : "",
     seen,
     flags: qualityFlags(data, leadName(data)),

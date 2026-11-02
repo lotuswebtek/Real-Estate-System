@@ -22,7 +22,10 @@ describe("alias mapping", () => {
     expect(masterKeyForHeader("CountryNameEn")).toBe("nationality");
     expect(masterKeyForHeader("Secondary Mobile")).toBe("mobile_2");
     expect(masterKeyForHeader("Villa Number")).toBe("unit");
+    expect(masterKeyForHeader("Building Name")).toBe("project");
+    expect(masterKeyForHeader("Community")).toBe("area");
     expect(masterKeyForHeader("Plot Number")).toBe("plot");
+    expect(masterKeyForHeader("Plot Number")).not.toBe("unit");
     expect(masterKeyForHeader("Parcel ID")).toBe("plot");
     expect(masterKeyForHeader("Landlord Name")).toBe("name");
     expect(masterKeyForHeader("Bedrooms")).toBe("bedrooms");

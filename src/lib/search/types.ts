@@ -4,6 +4,7 @@ export const SEARCH_COLUMNS = [
   "all",
   "name",
   "mobile",
+  "mobile2",
   "email",
   "nationality",
   "project",
@@ -13,6 +14,11 @@ export const SEARCH_COLUMNS = [
   "propertyType",
   "bedrooms",
   "role",
+  "emirate",
+  "size",
+  "price",
+  "date",
+  "idPassport",
 ] as const;
 
 export type SearchColumn = (typeof SEARCH_COLUMNS)[number];
@@ -59,6 +65,7 @@ export type SearchHit = {
   nationality: string;
   project: string;
   unit: string;
+  plot: string;
   propertyType: string;
   size: string;
   price: string;

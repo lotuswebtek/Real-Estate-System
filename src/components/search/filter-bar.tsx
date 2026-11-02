@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import type { MatchMode, SearchColumn } from "@/lib/sample/filter";
 import { columnLabel } from "@/lib/sample/filter";
+import { fieldMatches } from "@/lib/search/fields";
 import { SEARCH_COLUMNS, type SearchClause, type SearchMode } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +37,7 @@ function chipClass(active: boolean) {
 
 export function ColumnSelect({ value, onChange }: { value: SearchColumn; onChange: (column: SearchColumn) => void }) {
   const [query, setQuery] = useState("");
-  const shown = SEARCH_COLUMNS.filter((column) => columnLabel(column).toLowerCase().includes(query.trim().toLowerCase()));
+  const shown = SEARCH_COLUMNS.filter((column) => fieldMatches(column, query));
   return (
     <Popover>
       <PopoverTrigger asChild>
