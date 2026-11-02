@@ -9,8 +9,6 @@ export async function POST(request: Request) {
   if (shouldSkipFileName(file.name) || !isImportableFile(file.name)) {
     return NextResponse.json({ error: "Use an xlsx, xls, xlsm, or csv file." }, { status: 400 });
   }
-  const maxBytes = Number(process.env.MAX_UPLOAD_MB || "50") * 1024 * 1024;
-  if (file.size > maxBytes) return NextResponse.json({ error: "That file is larger than the upload limit." }, { status: 400 });
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const sheets = previewWorkbook(bytes, file.name);

@@ -33,7 +33,6 @@ export async function POST(request: Request) {
   const source = await prisma.source.findUnique({ where: { id: "manual-uploads" } });
   if (!source) return NextResponse.json({ error: "The upload source is missing. Run the database seed and try again." }, { status: 500 });
 
-  const maxBytes = Number(process.env.MAX_UPLOAD_MB || "50") * 1024 * 1024;
   const replace = form.get("replace") === "1";
   const category = typeof form.get("area") === "string" ? form.get("area")!.toString().trim() : "";
   const folderOverride = typeof form.get("folder") === "string" ? form.get("folder")!.toString().trim() : "";
@@ -47,11 +46,6 @@ export async function POST(request: Request) {
       accepted.push({ name, status: "skipped" });
       continue;
     }
-    if (file.size > maxBytes) {
-      accepted.push({ name, status: "too-large" });
-      continue;
-    }
-
     const folderFromPath = path.dirname(relative.replace(/\\/g, "/"));
     const folderPath = folderOverride || folderLabel(folderFromPath === "." ? "" : folderFromPath);
     const area = category || areaFromFileName(name);

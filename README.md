@@ -174,7 +174,6 @@ Railway runs the website and a Postgres database. Search uses that database. The
    | `ADMIN_PASSWORD` | at least 8 characters, different from the local default |
    | `SESSION_SECRET` | at least 32 random characters |
    | `ENCRYPTION_KEY` | another random string of at least 32 characters |
-   | `MAX_UPLOAD_MB` | `50` |
 
    Pick the Postgres variable from the reference menu so the host name stays inside Railway. Do not paste the local `localhost:5433` URL.
 

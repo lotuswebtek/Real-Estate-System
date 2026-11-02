@@ -32,15 +32,18 @@ function storageRoot(): string {
   return path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_PATH || "./storage");
 }
 
-function maxBytes(): number {
-  const mb = Number(process.env.MAX_UPLOAD_MB || "50");
-  return (Number.isFinite(mb) && mb > 0 ? mb : 50) * 1024 * 1024;
+function connectionDropped(error: unknown): boolean {
+  const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+  if (code === "P1001" || code === "P1008" || code === "P1017") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /closed the connection|connection reset|econnreset|forcibly closed|can't reach database|server has closed/i.test(message);
 }
 
 function readableError(error: unknown): string {
   const message = error instanceof Error ? error.message : "The file could not be read.";
+  if (connectionDropped(error)) return "The database connection closed before this workbook finished. Import it again.";
   if (/maximum call stack/i.test(message)) return "This workbook has too many rows for one read. It will be imported again with the updated reader.";
-  if (/unsupported|corrupt|invalid/i.test(message)) return "This workbook looks damaged or is in a format the app cannot read.";
+  if (/unsupported|corrupt|invalid zip|invalid file|invalid workbook/i.test(message)) return "This workbook looks damaged or is in a format the app cannot read.";
   return "This workbook could not be read. Check that it is a normal Excel or CSV file, then import it again.";
 }
 
@@ -64,11 +67,40 @@ async function rememberColumns(db: PrismaClient, headers: { raw: string; key: st
   }
 }
 
+async function insertRows(db: PrismaClient, data: Parameters<PrismaClient["row"]["createMany"]>[0]["data"]) {
+  const pending = [data];
+  while (pending.length > 0) {
+    const chunk = pending.shift();
+    if (!chunk || (Array.isArray(chunk) && chunk.length === 0)) continue;
+    try {
+      let last: unknown;
+      let saved = false;
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        try {
+          await db.row.createMany({ data: chunk });
+          saved = true;
+          break;
+        } catch (error) {
+          last = error;
+          if (!connectionDropped(error) || attempt === 4) break;
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
+      if (!saved) throw last;
+    } catch (error) {
+      if (!Array.isArray(chunk) || chunk.length <= 100 || !connectionDropped(error)) throw error;
+      const mid = Math.ceil(chunk.length / 2);
+      pending.unshift(chunk.slice(0, mid), chunk.slice(mid));
+    }
+  }
+}
+
 async function flushRows(db: PrismaClient, fileId: string, sheetId: string, batch: ParsedRow[], tally: QualityTally) {
   if (batch.length === 0) return;
   for (const row of batch) addQuality(tally, row);
-  await db.row.createMany({
-    data: batch.map((row) => ({
+  await insertRows(
+    db,
+    batch.map((row) => ({
       fileId,
       sheetId,
       rowNumber: row.rowNumber,
@@ -77,7 +109,7 @@ async function flushRows(db: PrismaClient, fileId: string, sheetId: string, batc
       phoneKeys: row.phoneKeys,
       emailKeys: row.emailKeys,
     })),
-  });
+  );
   batch.length = 0;
 }
 
@@ -85,9 +117,9 @@ async function noteProgress(db: PrismaClient, fileId: string, rowCount: number, 
   await db.file.update({ where: { id: fileId }, data: { rowCount, sheetCount } });
 }
 
-async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath: string, selected: string[]) {
+async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath: string, selected: string[], resume = false) {
   let sheetCount = 0;
-  let rowCount = 0;
+  let rowCount = resume ? await db.row.count({ where: { fileId } }) : 0;
   let flushes = 0;
   const importedNames: string[] = [];
   const tally = emptyQuality();
@@ -100,12 +132,24 @@ async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath:
     const pending: { excelRow: number; cells: string[] }[] = [];
     let sheetId = "";
     let sheetRows = 0;
+    let skipThrough = 0;
     const batch: ParsedRow[] = [];
 
     const startSheet = async (plan: HeaderPlan) => {
       started = true;
       headers = plan.headers;
       await rememberColumns(db, headers);
+      if (resume) {
+        const existing = await db.sheet.findFirst({ where: { fileId, name }, select: { id: true } });
+        if (existing) {
+          const progress = await db.row.aggregate({ where: { sheetId: existing.id }, _count: true, _max: { rowNumber: true } });
+          sheetId = existing.id;
+          sheetRows = progress._count;
+          skipThrough = progress._max.rowNumber ?? 0;
+          for (const row of plan.data) await pushRow(row);
+          return;
+        }
+      }
       const created = await db.sheet.create({
         data: { fileId, name, headerRowNumber: plan.headerRowNumber, rowCount: 0 },
       });
@@ -114,6 +158,10 @@ async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath:
     };
 
     const pushRow = async (row: { excelRow: number; cells: string[] }) => {
+      if (row.excelRow <= skipThrough) {
+        if (row.excelRow > 0 && row.excelRow % 50000 === 0) await noteProgress(db, fileId, rowCount, sheetCount);
+        return;
+      }
       const widened = extendHeaders(headers, row.cells.length);
       if (widened.length !== headers.length) {
         await rememberColumns(db, widened.slice(headers.length));
@@ -153,11 +201,11 @@ async function importLargeWorkbook(db: PrismaClient, fileId: string, sourcePath:
   }, allow ? (name) => allow.has(name) : undefined);
   const missing = selected.filter((name) => !importedNames.includes(name));
   if (sheetCount === 0) throw new Error(selected.length > 0 ? "None of the selected worksheets were found." : "This workbook has no readable sheets.");
-  const quality = qualityLine(tally);
+  const quality = resume ? "" : qualityLine(tally);
   return { sheetCount, rowCount, failures: [...missing.map((name) => `${name}: worksheet was not in the file`), ...(quality ? [quality] : [])] };
 }
 
-export async function importFileById(fileId: string, db: PrismaClient = prisma, options?: { force?: boolean }): Promise<void> {
+export async function importFileById(fileId: string, db: PrismaClient = prisma, options?: { force?: boolean; resume?: boolean }): Promise<void> {
   const file = await db.file.findUnique({ where: { id: fileId } });
   if (!file) return;
   await db.file.update({ where: { id: fileId }, data: { status: "processing", errorMessage: null } });
@@ -167,10 +215,6 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma, 
     if (!sourcePath) throw new Error("missing path");
     const { readFile, stat } = await import("node:fs/promises");
     const info = await stat(sourcePath);
-    if (info.size > maxBytes()) {
-      const limit = process.env.MAX_UPLOAD_MB || "50";
-      throw new Error(`larger than ${limit} MB`);
-    }
     const large = isLargeWorkbook(file.originalName, info.size);
     const buffer = large ? null : await readFile(sourcePath);
     const sha256Hash = buffer ? createHash("sha256").update(buffer).digest("hex") : await hashFile(sourcePath);
@@ -213,11 +257,13 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma, 
       }
     }
 
-    await db.row.deleteMany({ where: { fileId } });
-    await db.sheet.deleteMany({ where: { fileId } });
+    if (!options?.resume) {
+      await db.row.deleteMany({ where: { fileId } });
+      await db.sheet.deleteMany({ where: { fileId } });
+    }
 
     if (large || !buffer) {
-      const imported = await importLargeWorkbook(db, fileId, sourcePath, file.selectedSheets);
+      const imported = await importLargeWorkbook(db, fileId, sourcePath, file.selectedSheets, Boolean(options?.resume));
       await db.file.update({
         where: { id: fileId },
         data: {
@@ -305,14 +351,11 @@ export async function importFileById(fileId: string, db: PrismaClient = prisma, 
   } catch (error) {
     const raw = error instanceof Error ? error.message : "The file could not be read.";
     console.error(raw.replace(/\d{5,}/g, "#").slice(0, 300));
-    const tooBig = error instanceof Error && error.message.startsWith("larger than");
     await db.file.update({
       where: { id: fileId },
       data: {
         status: "failed",
-        errorMessage: tooBig
-          ? `This file is larger than ${process.env.MAX_UPLOAD_MB || "50"} MB. Raise MAX_UPLOAD_MB in .env if you need to import it.`
-          : readableError(error),
+        errorMessage: readableError(error),
       },
     });
   }

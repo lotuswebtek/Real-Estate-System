@@ -236,7 +236,7 @@ export function UploadView() {
             </div>
             <h2 className="text-[16px] font-medium">{busy ? "Reading files…" : "Drop files here"}</h2>
             <p className="mt-2 max-w-md text-[13px] text-muted-foreground">
-              xlsx, xls, and csv. One file lets you pick worksheets. Several files, or a folder, import every worksheet. The largest file allowed is set by MAX_UPLOAD_MB.
+              xlsx, xls, and csv. One file lets you pick worksheets. Several files, or a folder, import every worksheet. There is no file size limit.
             </p>
           </div>
           <div className="mx-auto mt-5 grid max-w-xl gap-3 sm:grid-cols-2">
