@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { readClauses } from "@/lib/search/clauses";
-import { readSavedSearches, subscribeLibrary, writeSavedSearches, type SavedSearch } from "@/lib/client/library";
+import { EMPTY_SAVED_SEARCHES, readSavedSearches, subscribeLibrary, writeSavedSearches } from "@/lib/client/library";
 import type { SearchClause, SearchHit, SearchResponse } from "@/lib/search/types";
 import { SEARCH_COLUMNS } from "@/lib/search/types";
 import type { MatchMode } from "@/lib/sample/filter";
@@ -150,7 +150,7 @@ export function SearchExperience() {
     setSyncedRules(state.rules);
     setRuleDraft(readClauses(state.rules));
   }
-  const saved = useSyncExternalStore((listener) => subscribeLibrary("saved", listener), readSavedSearches, () => [] as SavedSearch[]);
+  const saved = useSyncExternalStore((listener) => subscribeLibrary("saved", listener), readSavedSearches, () => EMPTY_SAVED_SEARCHES);
   const [saveName, setSaveName] = useState("");
 
   useEffect(() => {

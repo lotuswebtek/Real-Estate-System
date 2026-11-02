@@ -6,6 +6,9 @@ const SAVED_KEY = "lf.saved";
 const BOOKMARK_KEY = "lf.bookmarks";
 const NOTES_KEY = "lf.notes";
 
+export const EMPTY_SAVED_SEARCHES: SavedSearch[] = [];
+let savedCache: SavedSearch[] = EMPTY_SAVED_SEARCHES;
+
 function readJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -16,20 +19,36 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
+function isSavedSearch(item: unknown): item is SavedSearch {
+  if (!item || typeof item !== "object") return false;
+  const row = item as SavedSearch;
+  return typeof row.name === "string" && typeof row.query === "string" && typeof row.rules === "string";
+}
+
+function sameSaved(left: SavedSearch[], right: SavedSearch[]) {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => item.name === right[index]?.name && item.query === right[index]?.query && item.rules === right[index]?.rules)
+  );
+}
+
 export function readSavedSearches(): SavedSearch[] {
-  const parsed = readJson<unknown>(SAVED_KEY, []);
-  if (!Array.isArray(parsed)) return [];
-  return parsed
-    .filter((item): item is SavedSearch => {
-      if (!item || typeof item !== "object") return false;
-      const row = item as SavedSearch;
-      return typeof row.name === "string" && typeof row.query === "string" && typeof row.rules === "string";
-    })
-    .slice(0, 20);
+  if (typeof window === "undefined") return savedCache;
+  const parsed = readJson<unknown>(SAVED_KEY, EMPTY_SAVED_SEARCHES);
+  const next = Array.isArray(parsed) ? parsed.filter(isSavedSearch).slice(0, 20) : EMPTY_SAVED_SEARCHES;
+  if (next.length === 0) {
+    savedCache = EMPTY_SAVED_SEARCHES;
+    return savedCache;
+  }
+  if (sameSaved(next, savedCache)) return savedCache;
+  savedCache = next;
+  return savedCache;
 }
 
 export function writeSavedSearches(items: SavedSearch[]) {
-  window.localStorage.setItem(SAVED_KEY, JSON.stringify(items.slice(0, 20)));
+  const next = items.slice(0, 20);
+  savedCache = next.length === 0 ? EMPTY_SAVED_SEARCHES : next;
+  window.localStorage.setItem(SAVED_KEY, JSON.stringify(savedCache));
   window.dispatchEvent(new Event(SAVED_KEY));
 }
 
@@ -63,6 +82,7 @@ export function writeNote(id: string, note: string) {
 }
 
 export function subscribeLibrary(key: "saved" | "bookmarks", listener: () => void) {
+  if (typeof window === "undefined") return () => {};
   const name = key === "saved" ? SAVED_KEY : BOOKMARK_KEY;
   window.addEventListener(name, listener);
   return () => window.removeEventListener(name, listener);
