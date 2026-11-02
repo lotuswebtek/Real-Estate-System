@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { copyFile, mkdir, statfs } from "node:fs/promises";
 import path from "node:path";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeHeader } from "@/lib/columns/headers";
 import { readWorkbookBuffer } from "@/lib/import/cells";
 import { duplicateTarget, sheetsToImport } from "@/lib/import/names";
@@ -67,7 +67,7 @@ async function rememberColumns(db: PrismaClient, headers: { raw: string; key: st
   }
 }
 
-async function insertRows(db: PrismaClient, data: Parameters<PrismaClient["row"]["createMany"]>[0]["data"]) {
+async function insertRows(db: PrismaClient, data: Prisma.RowCreateManyInput[]) {
   const pending = [data];
   while (pending.length > 0) {
     const chunk = pending.shift();
